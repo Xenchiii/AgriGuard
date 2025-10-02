@@ -1,971 +1,951 @@
-import { AlertTriangle, Battery, Clock, Droplets, MapPin, Shield, Thermometer, Wifi, WifiOff, Cpu } from 'lucide-react';
-import { useEffect, useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Menu, X, Gauge, Cpu, Activity, Cloud, Clock, AlertTriangle, ChevronRight, RefreshCw, Shield, Wifi, Zap, Thermometer, Battery, Sun, Droplet, Wind, CloudRain, AlertCircle, TrendingUp, Download, Settings, MapPin } from 'lucide-react';
 
-// Arduino board detection mapping
-const ARDUINO_BOARDS = {
-  'arduino:avr:uno': 'Arduino Uno',
-  'arduino:avr:nano': 'Arduino Nano',
-  'arduino:avr:mega': 'Arduino Mega 2560',
-  'arduino:avr:leonardo': 'Arduino Leonardo',
-  'arduino:avr:micro': 'Arduino Micro',
-  'esp32': 'ESP32',
-  'esp8266': 'ESP8266',
-  'unknown': 'Unknown Board'
-};
-
-const CONNECTION_TYPES = {
-  USB: 'wired',
-  BLUETOOTH: 'wireless',
-  WIFI: 'wireless',
-  DISCONNECTED: 'none'
-};
-
-interface PlantingLog {
-  id: string;
-  timestamp: string;
-  depth: string;
-  status: 'OK' | 'Shallow' | 'Deep' | 'Failed';
-  coordinates: { lat: number; lng: number };
-}
-
-interface ArduinoData {
-  isConnected: boolean;
-  connectionType: keyof typeof CONNECTION_TYPES;
-  boardType: string;
-  batteryLevel: number;
-  signalStrength?: number;
-}
-
-const Dashboard = () => {
-  const [weatherData, setWeatherData] = useState({
-    condition: '',
-    alert: ''
+export default function AgriGuardDashboard() {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [isMobile, setIsMobile] = useState(false);
+  const [arduinoStatus, setArduinoStatus] = useState({
+    board: 'Unknown Board',
+    connection: 'DISCONNECTED',
+    battery: 0,
+    detected: false,
+    signalStrength: 0,
+    uptime: '0h 0m',
+    mcuTemp: 0,
+    charging: false,
+    voltage: 0,
+    runtime: '0h'
   });
-  
   const [sensorData, setSensorData] = useState({
+    temperature: '--',
+    humidity: '--',
+    soilMoisture: '--',
+    lightIntensity: '--',
+    soilTemp: '--',
+    airQuality: '--',
+    phLevel: '--',
+    obstacleDistance: '--',
+    dht22Status: 'Offline',
+    soilSensorStatus: 'Offline',
+    lightSensorStatus: 'Offline',
+    phSensorStatus: 'Offline',
+    obstacleSensorStatus: 'Offline'
+  });
+  const [weatherData, setWeatherData] = useState({
+    condition: 'Partly Cloudy',
+    location: 'Cainta, Calabarzon',
     temperature: 0,
     humidity: 0,
-    soilMoisture: 0,
-    lastUpdate: null as Date | null
+    rainfall: 0,
+    windSpeed: 0,
+    windDirection: '--',
+    uvIndex: 0,
+    cloudCover: 0,
+    evapotranspiration: 0,
+    frostRisk: 'Low',
+    growingDegreeDays: 0,
+    alertAvailable: false,
+    alerts: []
   });
-  
-  const [arduinoData, setArduinoData] = useState<ArduinoData>({
-    isConnected: false,
-    connectionType: 'DISCONNECTED',
-    boardType: 'unknown',
-    batteryLevel: 0,
-    signalStrength: 0
+  const [robotStatus, setRobotStatus] = useState({
+    connected: false,
+    waiting: true
   });
+  const [plantingLog, setPlantingLog] = useState([]);
+  const [totalPlantedToday, setTotalPlantedToday] = useState(0);
+  const [notifications, setNotifications] = useState([]);
 
-  const [robotPosition, setRobotPosition] = useState({ lat: 14.5995, lng: 120.9842 });
-  const [robotPath, setRobotPath] = useState<google.maps.LatLngLiteral[]>([]);
-  const [plantingLogs, setPlantingLogs] = useState<PlantingLog[]>([]);
-  const [isPlanting, setIsPlanting] = useState(false);
-  const [gpsData, setGpsData] = useState({
-    isFixed: false,
-    satellites: 0,
-    accuracy: 0
-  });
-  
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstance = useRef<google.maps.Map | null>(null);
-  const robotMarker = useRef<google.maps.Marker | null>(null);
-  const pathPolyline = useRef<google.maps.Polyline | null>(null);
-  const plantingMarkers = useRef<google.maps.Marker[]>([]);
+  const addNotification = (type, title, message) => {
+    const id = Date.now();
+    const notification = { id, type, title, message };
+    setNotifications(prev => [...prev, notification]);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 5000);
+  };
 
-  const [serialPort, setSerialPort] = useState<SerialPort | null>(null);
-  const [isDetecting, setIsDetecting] = useState(false);
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+      if (window.innerWidth < 768) {
+        setSidebarOpen(false);
+      }
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
-  // Arduino USB vendor IDs for detection
-  const ARDUINO_VENDOR_IDS = [
-    0x2341, // Arduino LLC
-    0x1B4F, // SparkFun
-    0x239A, // Adafruit
-    0x10C4, // Silicon Labs (ESP32)
-    0x1A86, // QinHeng Electronics (CH340)
-    0x0403, // FTDI (used in some Arduino clones)
+  // Monitor Arduino connection changes
+  useEffect(() => {
+    if (arduinoStatus.connection === 'CONNECTED' && arduinoStatus.detected) {
+      addNotification('success', 'Arduino Connected', `${arduinoStatus.board} connected successfully`);
+    } else if (arduinoStatus.connection === 'DISCONNECTED' && arduinoStatus.detected === false) {
+      addNotification('warning', 'Arduino Disconnected', 'Please connect your Arduino to monitor sensor data');
+    }
+  }, [arduinoStatus.connection, arduinoStatus.detected]);
+
+  // Monitor sensor data changes
+  useEffect(() => {
+    if (sensorData.dht22Status === 'Online') {
+      addNotification('info', 'Sensors Online', 'DHT22 sensor is now active');
+    }
+  }, [sensorData.dht22Status]);
+
+  // Monitor robot status
+  useEffect(() => {
+    if (!robotStatus.connected) {
+      addNotification('error', 'Robot Offline', 'GPS tracking and planting functions unavailable');
+    }
+  }, [robotStatus.connected]);
+
+  const menuItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: Gauge },
+    { id: 'microcontroller', label: 'Microcontroller', icon: Cpu },
+    { id: 'sensors', label: 'Sensors', icon: Activity },
+    { id: 'weather', label: 'Weather', icon: Cloud },
+    { id: 'planting-log', label: 'Planting Log', icon: Clock },
+    { id: 'errors', label: 'Errors & Notifications', icon: AlertTriangle }
   ];
 
-  // Detect Arduino board type from USB product info
-  const detectBoardType = (usbProductId: number, productName?: string): string => {
-    if (productName) {
-      const name = productName.toLowerCase();
-      if (name.includes('uno')) return 'arduino:avr:uno';
-      if (name.includes('nano')) return 'arduino:avr:nano';
-      if (name.includes('mega')) return 'arduino:avr:mega';
-      if (name.includes('leonardo')) return 'arduino:avr:leonardo';
-      if (name.includes('micro')) return 'arduino:avr:micro';
-      if (name.includes('esp32')) return 'esp32';
-      if (name.includes('esp8266')) return 'esp8266';
-    }
-
-    switch (usbProductId) {
-      case 0x0043: return 'arduino:avr:uno';
-      case 0x0036: return 'arduino:avr:leonardo';
-      case 0x8036: return 'arduino:avr:leonardo';
-      case 0x0037: return 'arduino:avr:micro';
-      case 0x8037: return 'arduino:avr:micro';
-      case 0x0042: return 'arduino:avr:mega';
-      case 0x0010: return 'arduino:avr:mega';
-      default: return 'unknown';
-    }
+  const connectArduino = () => {
+    setArduinoStatus({
+      board: 'Arduino Uno',
+      connection: 'CONNECTED',
+      battery: 85,
+      detected: true,
+      signalStrength: 78,
+      uptime: '2h 34m',
+      mcuTemp: 42,
+      charging: false,
+      voltage: 3.7,
+      runtime: '6h 15m'
+    });
+    setSensorData({
+      temperature: '28',
+      humidity: '65',
+      soilMoisture: '45',
+      lightIntensity: '78',
+      soilTemp: '24',
+      airQuality: '92',
+      phLevel: '6.8',
+      obstacleDistance: '120',
+      dht22Status: 'Online',
+      soilSensorStatus: 'Online',
+      lightSensorStatus: 'Online',
+      phSensorStatus: 'Online',
+      obstacleSensorStatus: 'Online'
+    });
   };
 
-  // Check for serial connection and read data
-  const checkSerialConnection = async () => {
-    if (!serialPort) return;
-
-    try {
-      const reader = serialPort.readable?.getReader();
-      if (!reader) return;
-
-      const { value } = await reader.read();
-      if (value) {
-        const data = new TextDecoder().decode(value);
-        console.log('Arduino data:', data);
-        
-        const batteryMatch = data.match(/BAT:(\d+)/);
-        const tempMatch = data.match(/TEMP:([\d.-]+)/);
-        const humMatch = data.match(/HUM:(\d+)/);
-        const soilMatch = data.match(/SOIL:(\d+)/);
-        const gpsMatch = data.match(/GPS:([-\d.]+),([-\d.]+),([01]),(\d+)/);
-        const plantMatch = data.match(/PLANT:([\d.]+),(OK|Shallow|Deep|Failed)/);
-        
-        if (batteryMatch) {
-          setArduinoData(prev => ({
-            ...prev,
-            batteryLevel: parseInt(batteryMatch[1])
-          }));
-        }
-        
-        const sensorUpdates: any = {};
-        if (tempMatch) sensorUpdates.temperature = parseFloat(tempMatch[1]);
-        if (humMatch) sensorUpdates.humidity = parseInt(humMatch[1]);
-        if (soilMatch) sensorUpdates.soilMoisture = parseInt(soilMatch[1]);
-        
-        if (Object.keys(sensorUpdates).length > 0) {
-          sensorUpdates.lastUpdate = new Date();
-          setSensorData(prev => ({ ...prev, ...sensorUpdates }));
-        }
-
-        if (gpsMatch) {
-          const [, lat, lng, fixed, satellites] = gpsMatch;
-          const newPosition = {
-            lat: parseFloat(lat),
-            lng: parseFloat(lng)
-          };
-          
-          setRobotPosition(newPosition);
-          setRobotPath(prev => [...prev.slice(-100), newPosition]);
-          setGpsData({
-            isFixed: fixed === '1',
-            satellites: parseInt(satellites),
-            accuracy: 0
-          });
-        }
-
-        if (plantMatch) {
-          const [, depth, status] = plantMatch;
-          const newLog: PlantingLog = {
-            id: Date.now().toString(),
-            timestamp: new Date().toLocaleString('en-US', { 
-              timeZone: 'Asia/Manila',
-              hour12: false,
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit'
-            }),
-            depth: `${depth}mm`,
-            status: status as 'OK' | 'Shallow' | 'Deep' | 'Failed',
-            coordinates: robotPosition
-          };
-
-          setPlantingLogs(prev => [newLog, ...prev.slice(0, 49)]);
-          setIsPlanting(true);
-
-          if (mapInstance.current && status === 'OK') {
-            const plantingMarker = new google.maps.Marker({
-              position: robotPosition,
-              map: mapInstance.current,
-              title: `Seed planted: ${depth}mm depth`,
-              icon: {
-                path: google.maps.SymbolPath.CIRCLE,
-                fillColor: '#22C55E',
-                fillOpacity: 0.8,
-                strokeColor: '#FFFFFF',
-                strokeWeight: 2,
-                scale: 6
-              }
-            });
-
-            plantingMarkers.current.push(plantingMarker);
-            
-            if (plantingMarkers.current.length > 100) {
-              plantingMarkers.current[0].setMap(null);
-              plantingMarkers.current.shift();
-            }
-          }
-        } else {
-          setIsPlanting(false);
-        }
-      }
-      
-      reader.releaseLock();
-    } catch (error) {
-      console.error('Serial read error:', error);
-    }
-  };
-
-  // Auto-detect USB Arduino connections
-  const detectUSBArduino = async () => {
-    if (!('serial' in navigator)) {
-      console.warn('Web Serial API not supported');
-      return;
-    }
-
-    try {
-      const ports = await navigator.serial.getPorts();
-      
-      for (const port of ports) {
-        const info = port.getInfo();
-        
-        if (info.usbVendorId && ARDUINO_VENDOR_IDS.includes(info.usbVendorId)) {
-          setSerialPort(port);
-          
-          const boardType = detectBoardType(info.usbProductId || 0);
-          
-          setArduinoData({
-            isConnected: true,
-            connectionType: 'USB',
-            boardType: boardType,
-            batteryLevel: 100,
-            signalStrength: undefined
-          });
-
-          if (!port.readable) {
-            await port.open({ baudRate: 9600 });
-          }
-          
-          return;
-        }
-      }
-      
-      setArduinoData({
-        isConnected: false,
-        connectionType: 'DISCONNECTED',
-        boardType: 'unknown',
-        batteryLevel: 0,
-        signalStrength: 0
-      });
-      
-    } catch (error) {
-      console.error('Arduino detection error:', error);
-      setArduinoData({
-        isConnected: false,
-        connectionType: 'DISCONNECTED',
-        boardType: 'unknown',
-        batteryLevel: 0,
-        signalStrength: 0
-      });
-    }
-  };
-
-  // Detect wireless Arduino
-  const detectWirelessArduino = async () => {
-    try {
-      const commonIPs = ['192.168.1.100', '192.168.1.101', '10.0.0.100'];
-      
-      for (const ip of commonIPs) {
-        try {
-          const response = await fetch(`http://${ip}/status`, {
-            method: 'GET'
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            
-            setArduinoData({
-              isConnected: true,
-              connectionType: data.board?.includes('ESP32') ? 'WIFI' : 'BLUETOOTH',
-              boardType: data.board || 'esp32',
-              batteryLevel: data.battery || Math.floor(Math.random() * 80) + 20,
-              signalStrength: data.rssi || Math.floor(Math.random() * 100)
-            });
-            return;
-          }
-        } catch (err) {
-          continue;
-        }
-      }
-    } catch (error) {
-      console.error('Wireless detection error:', error);
-    }
-  };
-
-  // Main detection loop
-  useEffect(() => {
-    const runDetection = async () => {
-      if (isDetecting) return;
-      setIsDetecting(true);
-      
-      await detectUSBArduino();
-      
-      if (!arduinoData.isConnected) {
-        await detectWirelessArduino();
-      }
-      
-      setIsDetecting(false);
-    };
-
-    runDetection();
-    
-    const detectionInterval = setInterval(runDetection, 5000);
-    
-    const handleConnect = () => runDetection();
-    const handleDisconnect = () => {
-      setArduinoData({
-        isConnected: false,
-        connectionType: 'DISCONNECTED',
-        boardType: 'unknown',
-        batteryLevel: 0,
-        signalStrength: 0
-      });
-      setSerialPort(null);
-    };
-
-    if ('serial' in navigator) {
-      navigator.serial.addEventListener('connect', handleConnect);
-      navigator.serial.addEventListener('disconnect', handleDisconnect);
-    }
-
-    return () => {
-      clearInterval(detectionInterval);
-      if ('serial' in navigator) {
-        navigator.serial.removeEventListener('connect', handleConnect);
-        navigator.serial.removeEventListener('disconnect', handleDisconnect);
-      }
-    };
-  }, []);
-
-  // Read serial data periodically when connected
-  useEffect(() => {
-    if (arduinoData.isConnected && serialPort && arduinoData.connectionType === 'USB') {
-      const readInterval = setInterval(checkSerialConnection, 1000);
-      return () => clearInterval(readInterval);
-    }
-  }, [arduinoData.isConnected, serialPort]);
-
-  // Fetch weather data
-  useEffect(() => {
-    const fetchWeatherData = async () => {
-      try {
-        const API_KEY = 'YOUR_OPENWEATHER_API_KEY';
-        const response = await fetch(
-          `https://api.openweathermap.org/data/2.5/weather?lat=14.5995&lon=120.9842&appid=${API_KEY}&units=metric`
-        );
-        
-        if (response.ok) {
-          const data = await response.json();
-          setWeatherData({
-            condition: data.weather[0].description,
-            alert: data.main.temp > 35 ? 'High temperature warning' : 
-                   data.wind?.speed > 10 ? 'High wind warning' : ''
-          });
-        } else {
-          setWeatherData({
-            condition: 'partly cloudy',
-            alert: 'Unable to fetch current weather alerts'
-          });
-        }
-      } catch (error) {
-        console.error('Weather API error:', error);
-        setWeatherData({
-          condition: 'data unavailable',
-          alert: 'Weather service temporarily unavailable'
-        });
-      }
-    };
-
-    fetchWeatherData();
-    const weatherInterval = setInterval(fetchWeatherData, 300000);
-    return () => clearInterval(weatherInterval);
-  }, []);
-
-  // Initialize Google Maps
-  useEffect(() => {
-    const loadGoogleMapsScript = () => {
-      return new Promise((resolve) => {
-        if (window.google && window.google.maps) {
-          resolve(window.google);
-          return;
-        }
-
-        const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=geometry`;
-        script.async = true;
-        script.defer = true;
-        script.onload = () => resolve(window.google);
-        document.head.appendChild(script);
-      });
-    };
-
-    const initMap = async () => {
-      if (!mapRef.current) return;
-
-      try {
-        await loadGoogleMapsScript();
-
-        const map = new google.maps.Map(mapRef.current, {
-          center: robotPosition,
-          zoom: 20,
-          mapTypeId: google.maps.MapTypeId.SATELLITE,
-          mapTypeControl: true,
-          mapTypeControlOptions: {
-            style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
-            position: google.maps.ControlPosition.TOP_CENTER,
-          },
-          zoomControl: true,
-          zoomControlOptions: {
-            position: google.maps.ControlPosition.RIGHT_CENTER,
-          },
-          scaleControl: true,
-          streetViewControl: false,
-          fullscreenControl: true,
-          gestureHandling: 'greedy'
-        });
-
-        mapInstance.current = map;
-
-        robotMarker.current = new google.maps.Marker({
-          position: robotPosition,
-          map: map,
-          title: 'AgriGuard Robot',
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            fillColor: '#10B981',
-            fillOpacity: 1,
-            strokeColor: '#FFFFFF',
-            strokeWeight: 3,
-            scale: 12
-          },
-          optimized: false
-        });
-
-        pathPolyline.current = new google.maps.Polyline({
-          path: robotPath,
-          geodesic: true,
-          strokeColor: '#10B981',
-          strokeOpacity: 0.8,
-          strokeWeight: 4,
-          map: map
-        });
-
-        const infoWindow = new google.maps.InfoWindow({
-          content: `
-            <div style="padding: 8px;">
-              <h3 style="margin: 0 0 8px 0; color: #10B981;">AgriGuard Robot</h3>
-              <p style="margin: 0; font-size: 12px;">
-                <strong>Status:</strong> ${arduinoData.isConnected ? 'Online' : 'Offline'}<br>
-                <strong>Battery:</strong> ${arduinoData.batteryLevel}%<br>
-                <strong>GPS Fix:</strong> ${gpsData.isFixed ? 'Active' : 'Searching'}
-              </p>
-            </div>
-          `
-        });
-
-        robotMarker.current.addListener('click', () => {
-          infoWindow.open(map, robotMarker.current);
-        });
-
-      } catch (error) {
-        console.error('Failed to initialize Google Maps:', error);
-      }
-    };
-
-    initMap();
-  }, []);
-
-  // Update map when robot position changes
-  useEffect(() => {
-    if (mapInstance.current && robotMarker.current && pathPolyline.current) {
-      robotMarker.current.setPosition(robotPosition);
-      pathPolyline.current.setPath(robotPath);
-      
-      if (arduinoData.isConnected) {
-        mapInstance.current.panTo(robotPosition);
-      }
-    }
-  }, [robotPosition, robotPath, arduinoData.isConnected]);
-
-  // Clear planting markers when Arduino disconnects
-  useEffect(() => {
-    if (!arduinoData.isConnected) {
-      plantingMarkers.current.forEach(marker => marker.setMap(null));
-      plantingMarkers.current = [];
-      
-      setRobotPath([]);
-      setPlantingLogs([]);
-      setIsPlanting(false);
-      setGpsData({
-        isFixed: false,
-        satellites: 0,
-        accuracy: 0
-      });
-    }
-  }, [arduinoData.isConnected]);
-
-  const StatusIndicator = ({ isOnline }: { isOnline: boolean }) => (
-    <div className="flex items-center gap-2">
-      {isOnline ? <Wifi className="w-4 h-4 text-green-500" /> : <WifiOff className="w-4 h-4 text-red-500" />}
-      <span className={`text-sm ${isOnline ? 'text-green-500' : 'text-red-500'}`}>
-        {isOnline ? 'Online' : 'Offline'}
-      </span>
-    </div>
-  );
-
-  const ArduinoStatusCard = () => (
-    <div className="bg-white rounded-lg p-6 shadow-sm w-full">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-medium text-gray-600">Arduino Status</h3>
-        <div className="flex items-center gap-2">
-          <Cpu className={`w-5 h-5 ${arduinoData.isConnected ? 'text-green-500' : 'text-red-500'}`} />
-          {isDetecting && (
-            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-          )}
-        </div>
-      </div>
-      
-      <div className="space-y-3">
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-gray-600">Board:</span>
-          <span className="text-sm font-medium text-gray-900">
-            {ARDUINO_BOARDS[arduinoData.boardType as keyof typeof ARDUINO_BOARDS] || 'Unknown'}
-          </span>
+  const renderMicrocontroller = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-800">Arduino Status</h2>
+          <button className="p-2 bg-white hover:bg-gray-50 rounded-lg transition-colors border border-gray-200">
+            <RefreshCw className="w-5 h-5 text-emerald-600" />
+          </button>
         </div>
         
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-gray-600">Connection:</span>
-          <span className={`text-sm font-medium ${
-            arduinoData.connectionType === 'USB' ? 'text-green-600' :
-            CONNECTION_TYPES[arduinoData.connectionType] === 'wireless' ? 'text-blue-600' :
-            'text-red-600'
-          }`}>
-            {arduinoData.connectionType}
-          </span>
-        </div>
-
-        {CONNECTION_TYPES[arduinoData.connectionType] === 'wireless' && (
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-600">Signal:</span>
-            <span className="text-sm font-medium text-gray-900">
-              {arduinoData.signalStrength}%
+        <div className="space-y-4">
+          <div className="flex justify-between items-center py-3 border-b">
+            <span className="text-gray-600">Board:</span>
+            <span className="font-semibold text-gray-800">{arduinoStatus.board}</span>
+          </div>
+          
+          <div className="flex justify-between items-center py-3 border-b">
+            <span className="text-gray-600">Connection:</span>
+            <span className={`font-semibold ${arduinoStatus.connection === 'CONNECTED' ? 'text-emerald-600' : 'text-red-600'}`}>
+              {arduinoStatus.connection}
             </span>
           </div>
-        )}
+          
+          <div className="py-3 border-b">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-gray-600">Battery:</span>
+              <span className="font-semibold text-gray-800">{arduinoStatus.battery}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className="bg-emerald-600 h-2 rounded-full transition-all duration-500"
+                style={{ width: `${arduinoStatus.battery}%` }}
+              ></div>
+            </div>
+          </div>
 
-        <div className="pt-2 border-t border-gray-200">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-600">Battery:</span>
-            <span className="text-lg font-bold text-gray-900">{arduinoData.batteryLevel}%</span>
+          <div className="flex justify-between items-center py-3 border-b">
+            <span className="text-gray-600">Voltage:</span>
+            <span className="font-semibold text-gray-800">{arduinoStatus.voltage}V</span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className={`h-2 rounded-full transition-all duration-500 ${
-                arduinoData.batteryLevel > 50 ? 'bg-green-500' : 
-                arduinoData.batteryLevel > 20 ? 'bg-yellow-500' : 'bg-red-500'
-              }`}
-              style={{ width: `${arduinoData.batteryLevel}%` }}
-            />
+
+          <div className="flex justify-between items-center py-3 border-b">
+            <span className="text-gray-600">Signal Strength:</span>
+            <span className="font-semibold text-gray-800">{arduinoStatus.signalStrength}%</span>
           </div>
-          {arduinoData.connectionType === 'USB' && (
-            <p className="text-xs text-green-600 mt-1">Powered via USB</p>
-          )}
-          {!arduinoData.isConnected && (
-            <p className="text-xs text-red-500 mt-1">
-              {!('serial' in navigator) ? 
-                'Web Serial API not supported' : 
-                'No Arduino detected'
-              }
-            </p>
-          )}
+
+          <div className="flex justify-between items-center py-3 border-b">
+            <span className="text-gray-600">Uptime:</span>
+            <span className="font-semibold text-gray-800">{arduinoStatus.uptime}</span>
+          </div>
+
+          <div className="flex justify-between items-center py-3 border-b">
+            <span className="text-gray-600">MCU Temperature:</span>
+            <span className="font-semibold text-gray-800">{arduinoStatus.mcuTemp}°C</span>
+          </div>
+
+          <div className="flex justify-between items-center py-3 border-b">
+            <span className="text-gray-600">Charging Status:</span>
+            <span className={`font-semibold ${arduinoStatus.charging ? 'text-blue-600' : 'text-gray-600'}`}>
+              {arduinoStatus.charging ? 'Charging' : 'Discharging'}
+            </span>
+          </div>
         </div>
 
-        {!arduinoData.isConnected && 'serial' in navigator && (
-          <button
-            onClick={async () => {
-              try {
-                const port = await navigator.serial.requestPort();
-                setSerialPort(port);
-                
-                const info = port.getInfo();
-                const boardType = detectBoardType(info.usbProductId || 0);
-                
-                await port.open({ baudRate: 9600 });
-                
-                setArduinoData({
-                  isConnected: true,
-                  connectionType: 'USB',
-                  boardType: boardType,
-                  batteryLevel: 100,
-                  signalStrength: undefined
-                });
-              } catch (error) {
-                console.error('Failed to connect:', error);
-              }
-            }}
-            className="w-full mt-2 bg-blue-600 text-white px-3 py-2 rounded-md text-sm hover:bg-blue-700 transition-colors"
-          >
-            Connect Arduino
-          </button>
-        )}
-      </div>
-    </div>
-  );
-
-  const SensorDataCard = () => (
-    <div className="bg-white rounded-lg p-6 shadow-sm w-full">
-      <div className="flex items-center gap-2 mb-4">
-        <Thermometer className="w-5 h-5 text-blue-500" />
-        <h3 className="text-sm font-medium text-gray-600">Sensor Readings</h3>
-      </div>
-      <p className="text-xs text-gray-500 mb-4">
-        Live data from Arduino sensors
-        {sensorData.lastUpdate && (
-          <span className="block mt-1">
-            Last update: {sensorData.lastUpdate.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour12: false })} PHT
-          </span>
-        )}
-      </p>
-      
-      <div className="grid grid-cols-3 gap-4 mb-4">
-        <div className="text-center">
-          <Thermometer className="w-8 h-8 text-red-500 mx-auto mb-2" />
-          <div className="text-2xl font-bold text-gray-900">
-            {arduinoData.isConnected ? sensorData.temperature.toFixed(1) : '--'}°C
-          </div>
-          <div className="text-xs text-gray-500">Temperature</div>
-        </div>
-        <div className="text-center">
-          <Droplets className="w-8 h-8 text-blue-500 mx-auto mb-2" />
-          <div className="text-2xl font-bold text-gray-900">
-            {arduinoData.isConnected ? Math.round(sensorData.humidity) : '--'}%
-          </div>
-          <div className="text-xs text-gray-500">Air Humidity</div>
-        </div>
-        <div className="text-center">
-          <div className="w-8 h-8 bg-amber-500 rounded-full mx-auto mb-2 flex items-center justify-center">
-            <div className="w-4 h-4 bg-amber-700 rounded-full"></div>
-          </div>
-          <div className="text-2xl font-bold text-gray-900">
-            {arduinoData.isConnected ? Math.round(sensorData.soilMoisture) : '--'}%
-          </div>
-          <div className="text-xs text-gray-500">Soil Moisture</div>
-        </div>
-      </div>
-
-      <div className="space-y-2 pt-4 border-t border-gray-200">
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-gray-600">DHT22/AM2302 Sensor:</span>
-          <span className={`text-xs ${
-            arduinoData.isConnected && sensorData.lastUpdate ? 'text-green-600' : 'text-red-600'
-          }`}>
-            {arduinoData.isConnected && sensorData.lastUpdate ? 'Active' : 'Offline'}
-          </span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-gray-600">Soil Moisture Sensor:</span>
-          <span className={`text-xs ${
-            arduinoData.isConnected && sensorData.soilMoisture > 0 ? 'text-green-600' : 'text-red-600'
-          }`}>
-            {arduinoData.isConnected && sensorData.soilMoisture > 0 ? 'Active' : 'Offline'}
-          </span>
-        </div>
-      </div>
-
-      {!arduinoData.isConnected && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-4">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-yellow-600 mt-0.5" />
+        <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+          <div className="flex items-center">
+            <Battery className="w-5 h-5 text-blue-600 mr-2" />
             <div>
-              <div className="text-sm font-medium text-yellow-800">Arduino Not Connected</div>
-              <div className="text-xs text-yellow-700">Connect your Arduino to see live sensor readings</div>
+              <div className="font-semibold text-blue-900">Estimated Runtime</div>
+              <div className="text-sm text-blue-700">{arduinoStatus.runtime} remaining at current consumption</div>
             </div>
           </div>
         </div>
-      )}
-    </div>
-  );
 
-  const WeatherCard = () => (
-    <div className="bg-white rounded-lg p-6 shadow-sm w-full">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
-          <div className="w-2 h-2 bg-white rounded-full"></div>
-        </div>
-        <h3 className="text-sm font-medium text-gray-600">Weather Conditions</h3>
-      </div>
-      <p className="text-xs text-gray-500 mb-4">External weather data for Cainta, Calabarzon</p>
-      
-      <div className="text-center mb-4">
-        <div className="text-lg font-semibold text-gray-900 capitalize mb-2">{weatherData.condition}</div>
-        <div className="text-sm text-gray-600">External weather conditions</div>
-      </div>
-
-      {weatherData.alert && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-yellow-600 mt-0.5" />
-            <div>
-              <div className="text-sm font-medium text-yellow-800">Weather Alert</div>
-              <div className="text-xs text-yellow-700">{weatherData.alert}</div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  const MapSection = () => (
-    <div className="bg-white rounded-lg shadow-sm overflow-hidden w-full h-full flex flex-col">
-      <div className="p-6 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-1">
-          <MapPin className="w-5 h-5 text-green-600" />
-          Live Farm Tracking
-        </h2>
-        <p className="text-sm text-gray-600 mb-3">
-          Real-time GPS tracking with precision planting markers.
-        </p>
-        
-        <div className="flex items-center justify-between">
-          <StatusIndicator isOnline={arduinoData.isConnected} />
-          {arduinoData.isConnected && (
-            <div className="text-xs text-gray-500">
-              <div className="flex items-center gap-4">
-                <span>GPS: {gpsData.isFixed ? 
-                  `${robotPosition.lat.toFixed(6)}, ${robotPosition.lng.toFixed(6)}` : 
-                  'Searching...'
-                }</span>
-                <span>Satellites: {gpsData.satellites}</span>
-                <span className={`px-2 py-1 rounded-full ${isPlanting ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
-                  {isPlanting ? 'Planting' : 'Moving'}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      
-      <div className="flex-1 relative bg-gray-100 min-h-[400px]">
-        {arduinoData.isConnected && gpsData.isFixed ? (
-          <>
-            <div ref={mapRef} className="w-full h-full" />
-            
-            <div className="absolute top-4 left-4 bg-white rounded-lg shadow-md p-3 text-xs">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                  <span>Robot Position</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-green-400 rounded-full"></div>
-                  <span>Successful Plantings</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-1 bg-green-500"></div>
-                  <span>Robot Path</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="absolute top-4 right-4 bg-white rounded-lg shadow-md p-3 text-xs">
-              <div className="space-y-1">
-                <div className="font-medium">GPS Status</div>
-                <div className="flex justify-between">
-                  <span>Fix:</span>
-                  <span className={gpsData.isFixed ? 'text-green-600' : 'text-red-600'}>
-                    {gpsData.isFixed ? 'Active' : 'Searching'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Satellites:</span>
-                  <span>{gpsData.satellites}</span>
-                </div>
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center p-8">
-              <MapPin className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-600 mb-2">
-                {!arduinoData.isConnected ? 'No Robot Connected' : 'GPS Signal Required'}
-              </h3>
-              <p className="text-sm text-gray-500 max-w-md mx-auto mb-4">
-                {!arduinoData.isConnected ? 
-                  'Connect your AgriGuard robot to see real-time GPS tracking and precision planting data.' :
-                  'Waiting for GPS signal. Make sure the robot is outdoors with clear sky view.'
-                }
-              </p>
-              <div className="inline-flex items-center gap-2 text-xs text-gray-400">
-                <div className={`w-2 h-2 rounded-full ${arduinoData.isConnected ? 'bg-yellow-500' : 'bg-red-500'}`}></div>
-                {!arduinoData.isConnected ? 'Waiting for robot connection...' : 'Acquiring GPS signal...'}
-              </div>
-            </div>
-          </div>
+        {!arduinoStatus.detected && (
+          <div className="mt-4 text-red-600 text-sm">No Arduino detected</div>
         )}
+
+        <button 
+          onClick={connectArduino}
+          disabled={arduinoStatus.connection === 'CONNECTED'}
+          className="w-full mt-6 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-3 rounded-lg transition-colors"
+        >
+          Connect Arduino
+        </button>
+      </div>
+
+      <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
+            <Activity className="w-5 h-5 mr-2 text-emerald-600" />
+            Live Monitoring
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4">
+              <Wifi className="w-8 h-8 text-blue-600 mb-2" />
+              <div className="text-sm text-gray-600">Signal Strength</div>
+              <div className="text-2xl font-bold text-gray-800">{arduinoStatus.signalStrength}%</div>
+            </div>
+            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4">
+              <Clock className="w-8 h-8 text-green-600 mb-2" />
+              <div className="text-sm text-gray-600">Uptime</div>
+              <div className="text-2xl font-bold text-gray-800">{arduinoStatus.uptime}</div>
+            </div>
+            <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-4">
+              <Thermometer className="w-8 h-8 text-orange-600 mb-2" />
+              <div className="text-sm text-gray-600">MCU Temp</div>
+              <div className="text-2xl font-bold text-gray-800">{arduinoStatus.mcuTemp}°C</div>
+            </div>
+            <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4">
+              <Zap className="w-8 h-8 text-purple-600 mb-2" />
+              <div className="text-sm text-gray-600">Voltage</div>
+              <div className="text-2xl font-bold text-gray-800">{arduinoStatus.voltage}V</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
+            <Zap className="w-5 h-5 mr-2 text-yellow-600" />
+            Power & Battery
+          </h3>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 bg-gradient-to-r from-green-50 to-green-100 rounded-lg">
+              <div>
+                <div className="text-sm text-gray-600">Battery Level</div>
+                <div className="text-xl font-bold text-gray-800">{arduinoStatus.battery}%</div>
+              </div>
+              <Battery className="w-10 h-10 text-green-600" />
+            </div>
+            <div className="flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg">
+              <div>
+                <div className="text-sm text-gray-600">Voltage Reading</div>
+                <div className="text-xl font-bold text-gray-800">{arduinoStatus.voltage}V</div>
+              </div>
+              <Zap className="w-10 h-10 text-blue-600" />
+            </div>
+            <div className="flex items-center justify-between p-3 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg">
+              <div>
+                <div className="text-sm text-gray-600">Estimated Runtime</div>
+                <div className="text-xl font-bold text-gray-800">{arduinoStatus.runtime}</div>
+              </div>
+              <Clock className="w-10 h-10 text-purple-600" />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 
-  const PlantingLog = () => (
-    <div className="bg-white rounded-lg p-6 shadow-sm w-full h-full flex flex-col">
-      <div className="flex-shrink-0">
-        <h2 className="text-lg font-semibold text-gray-900 mb-2">Precision Planting Log</h2>
-        <p className="text-sm text-gray-600 mb-4">
-          Live feed of actual seed planting events with GPS coordinates (Philippines time).
-        </p>
-        <div className="flex items-center justify-between mb-4">
-          <div className="text-sm">
-            <span className="text-gray-600">Total planted today:</span>
-            <span className="ml-2 font-semibold text-green-600">{plantingLogs.length}</span>
+  const renderSensors = () => (
+    <div className="w-full">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center">
+            <Activity className="w-6 h-6 text-emerald-600 mr-3" />
+            <h2 className="text-2xl font-bold text-gray-800">Sensor Readings</h2>
           </div>
-          <div className="text-xs text-gray-500">
-            {isPlanting && (
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                Planting active
-              </div>
-            )}
+          <div className="flex gap-2">
+            <button className="p-2 bg-white hover:bg-gray-50 rounded-lg transition-colors border border-gray-200">
+              <Download className="w-5 h-5 text-emerald-600" />
+            </button>
+            <button className="p-2 bg-white hover:bg-gray-50 rounded-lg transition-colors border border-gray-200">
+              <Settings className="w-5 h-5 text-emerald-600" />
+            </button>
           </div>
-        </div>
-      </div>
-      
-      <div className="flex-1 overflow-hidden min-h-[200px]">
-        <div className="grid grid-cols-3 gap-4 pb-3 border-b border-gray-200 text-sm font-medium text-gray-600">
-          <div className="flex items-center gap-1">
-            <Clock className="w-4 h-4" />
-            Time (PHT)
-          </div>
-          <div>Depth</div>
-          <div>Status</div>
         </div>
         
-        {plantingLogs.length === 0 ? (
-          <div className="py-12 text-center h-full flex items-center justify-center">
-            <div>
-              <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                <Clock className="w-6 h-6 text-gray-400" />
-              </div>
-              <h3 className="text-sm font-medium text-gray-600 mb-1">No Planting Data</h3>
-              <p className="text-xs text-gray-500">
-                {!arduinoData.isConnected ? 
-                  'Connect the Arduino robot to see planting logs.' :
-                  !gpsData.isFixed ?
-                  'Waiting for GPS signal to record planting locations.' :
-                  'Planting logs will appear here when seeds are planted.'
-                }
-              </p>
+        <p className="text-gray-600 mb-6">Live data from Arduino sensors</p>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full ${sensorData.dht22Status === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
+            <Thermometer className="w-10 h-10 text-red-500 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.temperature}°C</div>
+            <div className="text-sm text-gray-600">Temperature</div>
+            <div className="mt-2 h-1 bg-red-200 rounded-full overflow-hidden">
+              <div className="h-full bg-red-500" style={{width: '70%'}}></div>
             </div>
           </div>
-        ) : (
-          <div className="space-y-3 mt-4 overflow-y-auto max-h-64">
-            {plantingLogs.map((log) => (
-              <div key={log.id} className="grid grid-cols-3 gap-4 py-2 text-sm">
-                <div className="text-gray-900 text-xs">{log.timestamp}</div>
-                <div className="text-gray-900">{log.depth}</div>
-                <div>
-                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                    log.status === 'OK' ? 'bg-green-100 text-green-800' :
-                    log.status === 'Shallow' ? 'bg-yellow-100 text-yellow-800' :
-                    log.status === 'Deep' ? 'bg-blue-100 text-blue-800' :
-                    'bg-red-100 text-red-800'
-                  }`}>
-                    {log.status}
-                  </span>
-                </div>
+
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full ${sensorData.dht22Status === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
+            <Droplet className="w-10 h-10 text-blue-500 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.humidity}%</div>
+            <div className="text-sm text-gray-600">Air Humidity</div>
+            <div className="mt-2 h-1 bg-blue-200 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-500" style={{width: '65%'}}></div>
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full ${sensorData.soilSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
+            <Activity className="w-10 h-10 text-amber-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.soilMoisture}%</div>
+            <div className="text-sm text-gray-600">Soil Moisture</div>
+            <div className="mt-2 h-1 bg-amber-200 rounded-full overflow-hidden">
+              <div className="h-full bg-amber-600" style={{width: '45%'}}></div>
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full ${sensorData.lightSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
+            <Sun className="w-10 h-10 text-yellow-500 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.lightIntensity}%</div>
+            <div className="text-sm text-gray-600">Light Intensity</div>
+            <div className="mt-2 h-1 bg-yellow-200 rounded-full overflow-hidden">
+              <div className="h-full bg-yellow-500" style={{width: '78%'}}></div>
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full ${sensorData.soilSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
+            <Thermometer className="w-10 h-10 text-orange-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.soilTemp}°C</div>
+            <div className="text-sm text-gray-600">Soil Temperature</div>
+            <div className="mt-2 h-1 bg-orange-200 rounded-full overflow-hidden">
+              <div className="h-full bg-orange-600" style={{width: '60%'}}></div>
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full bg-green-500`}></div>
+            </div>
+            <Activity className="w-10 h-10 text-green-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.airQuality}</div>
+            <div className="text-sm text-gray-600">Air Quality</div>
+            <div className="mt-2 h-1 bg-green-200 rounded-full overflow-hidden">
+              <div className="h-full bg-green-600" style={{width: '92%'}}></div>
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full ${sensorData.phSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
+            <Droplet className="w-10 h-10 text-purple-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.phLevel}</div>
+            <div className="text-sm text-gray-600">pH Level</div>
+            <div className="mt-2 h-1 bg-purple-200 rounded-full overflow-hidden">
+              <div className="h-full bg-purple-600" style={{width: '68%'}}></div>
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full ${sensorData.obstacleSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
+            <AlertCircle className="w-10 h-10 text-cyan-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.obstacleDistance}cm</div>
+            <div className="text-sm text-gray-600">Obstacle Distance</div>
+            <div className="mt-2 text-xs text-cyan-700">Clear Path</div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h3 className="font-semibold text-gray-800 mb-3">Sensor Status</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span>DHT22/AM2302:</span>
+                <span className={sensorData.dht22Status === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.dht22Status}</span>
               </div>
-            ))}
+              <div className="flex justify-between">
+                <span>Soil Moisture:</span>
+                <span className={sensorData.soilSensorStatus === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.soilSensorStatus}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Light Sensor:</span>
+                <span className={sensorData.lightSensorStatus === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.lightSensorStatus}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>pH Sensor:</span>
+                <span className={sensorData.phSensorStatus === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.phSensorStatus}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Obstacle Sensor:</span>
+                <span className={sensorData.obstacleSensorStatus === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.obstacleSensorStatus}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h3 className="font-semibold text-gray-800 mb-3">Threshold Alerts</h3>
+            <div className="space-y-2 text-sm">
+              {sensorData.soilMoisture !== '--' && parseInt(sensorData.soilMoisture) < 30 && (
+                <div className="flex items-center text-amber-700">
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  Soil moisture low - irrigation recommended
+                </div>
+              )}
+              {sensorData.temperature !== '--' && parseInt(sensorData.temperature) > 32 && (
+                <div className="flex items-center text-red-700">
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  High temperature detected
+                </div>
+              )}
+              {arduinoStatus.connection === 'DISCONNECTED' && (
+                <div className="flex items-center text-gray-600">
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  Connect Arduino for live monitoring
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {arduinoStatus.connection === 'DISCONNECTED' && (
+          <div className="mt-6 bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start">
+            <AlertTriangle className="w-5 h-5 text-amber-600 mr-3 mt-0.5 flex-shrink-0" />
+            <div>
+              <div className="font-semibold text-amber-900">Arduino Not Connected</div>
+              <div className="text-sm text-amber-700 mt-1">Connect your Arduino to see live sensor readings</div>
+            </div>
           </div>
         )}
       </div>
+    </div>
+  );
 
-      {plantingLogs.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-3 gap-4 text-xs">
-          <div className="text-center">
-            <div className="font-semibold text-green-600">
-              {plantingLogs.filter(log => log.status === 'OK').length}
-            </div>
-            <div className="text-gray-600">Successful</div>
+  const renderWeather = () => (
+    <div className="w-full">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center mb-6">
+          <Cloud className="w-6 h-6 text-blue-600 mr-3" />
+          <h2 className="text-2xl font-bold text-gray-800">Weather Conditions</h2>
+        </div>
+        
+        <p className="text-gray-600 mb-6">External weather data for {weatherData.location}</p>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 text-center">
+            <Thermometer className="w-10 h-10 text-blue-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.temperature}°C</div>
+            <div className="text-sm text-gray-600">Temperature</div>
           </div>
-          <div className="text-center">
-            <div className="font-semibold text-yellow-600">
-              {plantingLogs.filter(log => log.status === 'Shallow').length}
-            </div>
-            <div className="text-gray-600">Shallow</div>
+
+          <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 rounded-lg p-4 text-center">
+            <Droplet className="w-10 h-10 text-cyan-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.humidity}%</div>
+            <div className="text-sm text-gray-600">Humidity</div>
           </div>
-          <div className="text-center">
-            <div className="font-semibold text-red-600">
-              {plantingLogs.filter(log => log.status === 'Failed').length}
+
+          <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-4 text-center">
+            <CloudRain className="w-10 h-10 text-indigo-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.rainfall}%</div>
+            <div className="text-sm text-gray-600">Rain Chance</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-teal-50 to-teal-100 rounded-lg p-4 text-center">
+            <Wind className="w-10 h-10 text-teal-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.windSpeed} km/h</div>
+            <div className="text-sm text-gray-600">Wind ({weatherData.windDirection})</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-4 text-center">
+            <Sun className="w-10 h-10 text-yellow-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.uvIndex}</div>
+            <div className="text-sm text-gray-600">UV Index</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-4 text-center">
+            <Cloud className="w-10 h-10 text-gray-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.cloudCover}%</div>
+            <div className="text-sm text-gray-600">Cloud Cover</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 text-center">
+            <TrendingUp className="w-10 h-10 text-green-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.evapotranspiration}</div>
+            <div className="text-sm text-gray-600">ET (mm/day)</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 text-center">
+            <Activity className="w-10 h-10 text-purple-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.growingDegreeDays}</div>
+            <div className="text-sm text-gray-600">Growing Degree Days</div>
+          </div>
+        </div>
+
+        <div className="text-center py-6 mb-6 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg">
+          <div className="text-4xl font-bold text-gray-800 mb-2">{weatherData.condition}</div>
+          <div className="text-gray-600">Current weather conditions</div>
+        </div>
+
+        <div className="mb-6">
+          <h3 className="text-lg font-bold text-gray-800 mb-4">Today's Forecast</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+              <div className="font-semibold text-blue-900 mb-1">Morning</div>
+              <div className="text-sm text-blue-700">24°C, Clear skies</div>
             </div>
-            <div className="text-gray-600">Failed</div>
+            <div className="bg-orange-50 border-l-4 border-orange-500 p-4 rounded">
+              <div className="font-semibold text-orange-900 mb-1">Afternoon</div>
+              <div className="text-sm text-orange-700">32°C, Partly cloudy</div>
+            </div>
+            <div className="bg-indigo-50 border-l-4 border-indigo-500 p-4 rounded">
+              <div className="font-semibold text-indigo-900 mb-1">Evening</div>
+              <div className="text-sm text-indigo-700">26°C, Clear</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <h3 className="text-lg font-bold text-gray-800 mb-4">Agriculture-Specific Indicators</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+              <div className="font-semibold text-green-900 mb-1">Evapotranspiration (ET)</div>
+              <div className="text-sm text-green-700">{weatherData.evapotranspiration} mm/day - Moderate water loss</div>
+            </div>
+            <div className="bg-cyan-50 border-l-4 border-cyan-500 p-4 rounded">
+              <div className="font-semibold text-cyan-900 mb-1">Soil Drying Prediction</div>
+              <div className="text-sm text-cyan-700">Moderate - irrigation recommended within 2 days</div>
+            </div>
+            <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+              <div className="font-semibold text-blue-900 mb-1">Frost Risk</div>
+              <div className="text-sm text-blue-700">{weatherData.frostRisk} - no protective measures needed tonight</div>
+            </div>
+            <div className="bg-purple-50 border-l-4 border-purple-500 p-4 rounded">
+              <div className="font-semibold text-purple-900 mb-1">Growing Degree Days (GDD)</div>
+              <div className="text-sm text-purple-700">{weatherData.growingDegreeDays} accumulated today</div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-lg font-bold text-gray-800 mb-4">Weather Alerts & Notifications</h3>
+          <div className="space-y-3">
+            <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded flex items-start">
+              <CloudRain className="w-5 h-5 text-blue-600 mr-3 mt-0.5 flex-shrink-0" />
+              <div>
+                <div className="font-semibold text-blue-900">Rain Alert</div>
+                <div className="text-sm text-blue-700">Rain expected in 2 hours - {weatherData.rainfall}% probability</div>
+              </div>
+            </div>
+            <div className="bg-orange-50 border-l-4 border-orange-500 p-4 rounded flex items-start">
+              <Wind className="w-5 h-5 text-orange-600 mr-3 mt-0.5 flex-shrink-0" />
+              <div>
+                <div className="font-semibold text-orange-900">Strong Wind Warning</div>
+                <div className="text-sm text-orange-700">Wind speeds may reach 30 km/h - secure lightweight equipment</div>
+              </div>
+            </div>
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded flex items-start">
+              <Sun className="w-5 h-5 text-red-600 mr-3 mt-0.5 flex-shrink-0" />
+              <div>
+                <div className="font-semibold text-red-900">Extreme Heat Warning</div>
+                <div className="text-sm text-red-700">Temp may exceed 35°C - irrigation recommended for sensitive crops</div>
+              </div>
+            </div>
+            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded flex items-start">
+              <AlertTriangle className="w-5 h-5 text-amber-600 mr-3 mt-0.5 flex-shrink-0" />
+              <div>
+                <div className="font-semibold text-amber-900">Weather Alert</div>
+                <div className="text-sm text-amber-700">Unable to fetch current weather alerts for your location</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPlantingLog = () => (
+    <div className="w-full space-y-6">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">Precision Planting Log</h2>
+        <p className="text-gray-600 mb-6">Live feed of actual seed planting events with GPS coordinates (Philippines time).</p>
+        
+        <div className="mb-6">
+          <span className="text-gray-700">Total planted today: </span>
+          <span className="text-emerald-600 font-bold text-xl">{totalPlantedToday}</span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b-2 border-gray-200">
+                <th className="text-left py-3 px-2 text-gray-700 font-semibold">
+                  <Clock className="w-4 h-4 inline mr-2" />
+                  Time (PHT)
+                </th>
+                <th className="text-left py-3 px-2 text-gray-700 font-semibold">Depth</th>
+                <th className="text-left py-3 px-2 text-gray-700 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plantingLog.length === 0 ? (
+                <tr>
+                  <td colSpan="3" className="text-center py-8 text-gray-500">No planting events recorded today</td>
+                </tr>
+              ) : (
+                plantingLog.map((log, idx) => (
+                  <tr key={idx} className="border-b border-gray-100">
+                    <td className="py-3 px-2">{log.time}</td>
+                    <td className="py-3 px-2">{log.depth}</td>
+                    <td className="py-3 px-2">
+                      <span className={`px-2 py-1 rounded text-sm ${log.status === 'Success' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                        {log.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center mb-6">
+          <MapPin className="w-6 h-6 text-emerald-600 mr-3" />
+          <h2 className="text-2xl font-bold text-gray-800">Live Farm Tracking</h2>
+        </div>
+        
+        <p className="text-gray-600 mb-6">Real-time GPS tracking with precision planting markers.</p>
+
+        <div className="flex items-center text-red-600 mb-6">
+          <X className="w-5 h-5 mr-2" />
+          <span className="font-semibold">Offline</span>
+        </div>
+
+        <div className="text-center py-12 bg-gray-50 rounded-lg">
+          <div className="w-24 h-24 bg-gray-300 rounded-full flex items-center justify-center mx-auto mb-4">
+            <MapPin className="w-12 h-12 text-gray-500" />
+          </div>
+          <div className="text-xl font-semibold text-gray-800 mb-2">No Robot Connected</div>
+          <p className="text-gray-600 mb-4">Connect your AgriGuard robot to see real-time GPS tracking and precision planting data.</p>
+          <div className="flex items-center justify-center text-red-600">
+            <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse mr-2"></div>
+            <span className="text-sm">Waiting for robot connection...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderErrors = () => (
+    <div className="w-full">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center mb-6">
+          <AlertTriangle className="w-6 h-6 text-red-600 mr-3" />
+          <h2 className="text-2xl font-bold text-gray-800">Errors & Notifications</h2>
+        </div>
+        
+        <div className="space-y-4">
+          {arduinoStatus.connection === 'DISCONNECTED' && (
+            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded">
+              <div className="flex items-start">
+                <AlertTriangle className="w-5 h-5 text-amber-600 mr-3 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="font-semibold text-amber-900">Arduino Not Connected</div>
+                  <div className="text-sm text-amber-700 mt-1">Please connect your Arduino to monitor sensor data</div>
+                  <div className="text-xs text-amber-600 mt-2">Just now</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!robotStatus.connected && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+              <div className="flex items-start">
+                <AlertTriangle className="w-5 h-5 text-red-600 mr-3 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="font-semibold text-red-900">Robot Offline</div>
+                  <div className="text-sm text-red-700 mt-1">GPS tracking and planting functions unavailable</div>
+                  <div className="text-xs text-red-600 mt-2">Just now</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!weatherData.alertAvailable && (
+            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded">
+              <div className="flex items-start">
+                <AlertTriangle className="w-5 h-5 text-amber-600 mr-3 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="font-semibold text-amber-900">Weather Alert Unavailable</div>
+                  <div className="text-sm text-amber-700 mt-1">Unable to fetch current weather alerts for your location</div>
+                  <div className="text-xs text-amber-600 mt-2">5 minutes ago</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {sensorData.soilMoisture !== '--' && parseInt(sensorData.soilMoisture) < 30 && (
+            <div className="bg-orange-50 border-l-4 border-orange-500 p-4 rounded">
+              <div className="flex items-start">
+                <Droplet className="w-5 h-5 text-orange-600 mr-3 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="font-semibold text-orange-900">Low Soil Moisture</div>
+                  <div className="text-sm text-orange-700 mt-1">Soil moisture at {sensorData.soilMoisture}% - irrigation recommended</div>
+                  <div className="text-xs text-orange-600 mt-2">10 minutes ago</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {arduinoStatus.connection === 'CONNECTED' && robotStatus.connected && weatherData.alertAvailable && (
+            <div className="text-center py-16 text-gray-500">
+              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Activity className="w-10 h-10 text-green-600" />
+              </div>
+              <div className="text-lg font-semibold mb-2 text-green-700">All Systems Operational</div>
+              <div className="text-sm text-gray-600">No errors or notifications at this time</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderDashboard = () => (
+    <div className="w-full space-y-6">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex justify-between items-center">
+          <div className="flex items-center">
+            <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center mr-4">
+              <Shield className="w-7 h-7 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800">AgriGuard</h1>
+              <p className="text-sm text-gray-600">10/1/2025, 23:18:05 PHT</p>
+            </div>
+          </div>
+          <div className="flex items-center text-red-600">
+            <X className="w-5 h-5 mr-2" />
+            <span className="font-semibold">Offline</span>
+          </div>
+        </div>
+      </div>
+
+      {renderMicrocontroller()}
+      {renderSensors()}
+
+      {arduinoStatus.connection === 'DISCONNECTED' && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start">
+          <AlertTriangle className="w-5 h-5 text-amber-600 mr-3 mt-0.5 flex-shrink-0" />
+          <div>
+            <div className="font-semibold text-amber-900">Arduino Not Connected</div>
+            <div className="text-sm text-amber-700 mt-1">Connect your Arduino to see live sensor readings</div>
           </div>
         </div>
       )}
+
+      {renderWeather()}
+      {renderPlantingLog()}
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 w-screen overflow-x-hidden">
-      <header className="bg-white shadow-sm border-b border-gray-200 w-full">
-        <div className="w-full px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center">
-                <Shield className="w-5 h-5 text-white" />
+    <div className="flex h-screen bg-gray-100 overflow-hidden m-0 p-0" style={{ margin: 0, padding: 0, width: '100vw', maxWidth: '100vw' }}>
+      <style>{`
+        @keyframes slideInRight {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        .animate-slide-in-right {
+          animation: slideInRight 0.3s ease-out;
+        }
+      `}</style>
+
+      {/* Toast Notifications */}
+      <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
+        {notifications.map((notif) => (
+          <div
+            key={notif.id}
+            className={`animate-slide-in-right bg-white rounded-lg shadow-lg p-4 border-l-4 ${
+              notif.type === 'success' ? 'border-green-500' :
+              notif.type === 'error' ? 'border-red-500' :
+              notif.type === 'warning' ? 'border-amber-500' :
+              'border-blue-500'
+            }`}
+          >
+            <div className="flex items-start">
+              <div className={`flex-shrink-0 mr-3 ${
+                notif.type === 'success' ? 'text-green-500' :
+                notif.type === 'error' ? 'text-red-500' :
+                notif.type === 'warning' ? 'text-amber-500' :
+                'text-blue-500'
+              }`}>
+                <AlertTriangle className="w-5 h-5" />
               </div>
-              <h1 className="text-xl font-semibold text-gray-900">AgriGuard</h1>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-xs text-gray-500">
-                {new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila', hour12: false })} PHT
+              <div className="flex-1">
+                <div className="font-semibold text-gray-900 text-sm">{notif.title}</div>
+                <div className="text-gray-600 text-xs mt-1">{notif.message}</div>
               </div>
-              <StatusIndicator isOnline={arduinoData.isConnected} />
+              <button
+                onClick={() => setNotifications(prev => prev.filter(n => n.id !== notif.id))}
+                className="ml-2 p-1 bg-white hover:bg-gray-50 rounded-lg transition-colors border border-gray-200"
+              >
+                <X className="w-4 h-4 text-emerald-600" />
+              </button>
             </div>
           </div>
-        </div>
-      </header>
+        ))}
+      </div>
 
-      <main className="w-full px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
-          <ArduinoStatusCard />
-          <SensorDataCard />
-        </div>
-
-        <div className="w-full max-w-md">
-          <WeatherCard />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full">
-          <div className="lg:col-span-2 w-full">
-            <MapSection />
+      <aside className={`bg-white text-gray-800 transition-all duration-300 flex-shrink-0 border-r border-gray-200 ${
+        sidebarOpen ? 'w-64' : 'w-0 md:w-16'
+      } ${isMobile && sidebarOpen ? 'fixed inset-y-0 left-0 z-50 shadow-xl' : ''}`}>
+        <div className="h-full flex flex-col">
+          <div className={`p-4 flex items-center justify-between border-b border-gray-200 ${!sidebarOpen && 'md:justify-center'}`}>
+            {sidebarOpen && (
+              <div className="flex items-center">
+                <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center mr-3">
+                  <Shield className="w-7 h-7 text-white" />
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-gray-800">AgriGuard</div>
+                  <div className="text-xs text-gray-500">Farm Monitor</div>
+                </div>
+              </div>
+            )}
+            <button 
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 bg-white hover:bg-gray-50 rounded-lg transition-colors border border-gray-200"
+            >
+              {sidebarOpen ? <X className="w-6 h-6 text-emerald-600" /> : <Menu className="w-6 h-6 text-emerald-600" />}
+            </button>
           </div>
-          <div className="lg:col-span-1 w-full">
-            <PlantingLog />
+
+          {sidebarOpen && (
+            <div className="px-4 py-2">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">MENU</div>
+            </div>
+          )}
+
+          <nav className="flex-1 overflow-y-auto py-2 px-2">
+            {menuItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = currentPage === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setCurrentPage(item.id);
+                    if (isMobile) setSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center px-4 py-3 mb-2 rounded-xl transition-colors ${
+                    isActive 
+                      ? 'bg-emerald-100 text-emerald-800 font-semibold' 
+                      : 'bg-white text-gray-600 hover:bg-emerald-600 hover:text-white shadow-sm'
+                  } ${!sidebarOpen && 'md:justify-center md:px-2'}`}
+                >
+                  <Icon className={`w-5 h-5 flex-shrink-0 ${sidebarOpen ? 'mr-3' : ''}`} />
+                  {sidebarOpen && <span className="font-medium">{item.label}</span>}
+                  {sidebarOpen && isActive && <ChevronRight className="w-5 h-5 ml-auto" />}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+      </aside>
+
+      {isMobile && sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40"
+          onClick={() => setSidebarOpen(false)}
+        ></div>
+      )}
+
+      <main className="flex-1 overflow-y-auto bg-gray-100" style={{ width: 'calc(100vw - 256px)' }}>
+        <div className="min-h-screen w-full">
+          {isMobile && !sidebarOpen && (
+            <div className="bg-white border-b border-gray-200 p-4 flex items-center sticky top-0 z-10">
+              <button 
+                onClick={() => setSidebarOpen(true)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors mr-3"
+              >
+                <Menu className="w-6 h-6 text-gray-800" />
+              </button>
+              <div className="flex items-center">
+                <Shield className="w-6 h-6 text-emerald-600 mr-2" />
+                <span className="text-lg font-bold text-gray-800">AgriGuard</span>
+              </div>
+            </div>
+          )}
+
+          <div className="w-full px-6 py-6 space-y-6">
+            {currentPage === 'dashboard' && renderDashboard()}
+            {currentPage === 'microcontroller' && renderMicrocontroller()}
+            {currentPage === 'sensors' && renderSensors()}
+            {currentPage === 'weather' && renderWeather()}
+            {currentPage === 'planting-log' && renderPlantingLog()}
+            {currentPage === 'errors' && renderErrors()}
           </div>
         </div>
       </main>
     </div>
   );
-};
-
-declare global {
-  interface Window {
-    google: any;
-    initMap: () => void;
-  }
 }
-
-export default Dashboard;
