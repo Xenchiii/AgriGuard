@@ -1,11 +1,79 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Menu, X, Gauge, Cpu, Activity, Cloud, Clock, AlertTriangle, ChevronRight, RefreshCw, Shield, Wifi, Zap, Thermometer, Battery, Sun, Droplet, Wind, CloudRain, AlertCircle, TrendingUp, Download, Settings, MapPin } from 'lucide-react';
+
+// --- Types ---
+type SensorStatus = 'Online' | 'Offline';
+
+interface SensorData {
+  temperature: string | number;
+  humidity: string | number;
+  soilMoisture: string | number;
+  lightIntensity: string | number;
+  soilTemp: string | number;
+  airQuality: string | number;
+  phLevel: string | number;
+  obstacleDistance: string | number;
+  dht22Status: SensorStatus;
+  soilSensorStatus: SensorStatus;
+  lightSensorStatus: SensorStatus;
+  phSensorStatus: SensorStatus;
+  obstacleSensorStatus: SensorStatus;
+}
+
+interface ArduinoStatus {
+  board: string;
+  connection: 'CONNECTED' | 'DISCONNECTED' | string;
+  battery: number;
+  detected: boolean;
+  signalStrength: number;
+  uptime: string;
+  mcuTemp: number;
+  charging: boolean;
+  voltage: number;
+  runtime: string;
+}
+
+interface WeatherData {
+  condition: string;
+  location: string;
+  temperature: number | string;
+  humidity: number | string;
+  rainfall: number | string;
+  windSpeed: number | string;
+  windDirection: string;
+  uvIndex: number | string;
+  cloudCover: number | string;
+  evapotranspiration: number | string;
+  frostRisk: string;
+  growingDegreeDays: number | string;
+  alertAvailable: boolean;
+  alerts: any[];
+}
+
+interface RobotStatus { connected: boolean; waiting: boolean }
+
+interface PlantingLogEntry { time: string; depth: string | number; status: string }
+
+type NotificationType = 'success' | 'error' | 'warning' | 'info';
+interface Notification { id: string; type: NotificationType; title: string; message: string }
+
+interface MenuItem { id: string; label: string; icon: any }
+
+// --- Menu items used in sidebar ---
+const menuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: Shield },
+  { id: 'microcontroller', label: 'Microcontroller', icon: Cpu },
+  { id: 'sensors', label: 'Sensors', icon: Activity },
+  { id: 'weather', label: 'Weather', icon: Cloud },
+  { id: 'planting-log', label: 'Planting Log', icon: MapPin },
+  { id: 'error & notifications', label: 'error & notifications', icon: AlertTriangle }
+];
 
 export default function AgriGuardDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const [isMobile] = useState(false);
-  const [arduinoStatus, setArduinoStatus] = useState({
+  const [isMobile, setIsMobile] = useState(false);
+  const [arduinoStatus, setArduinoStatus] = useState<ArduinoStatus>({
     board: 'Unknown Board',
     connection: 'DISCONNECTED',
     battery: 0,
@@ -17,7 +85,7 @@ export default function AgriGuardDashboard() {
     voltage: 0,
     runtime: '0h'
   });
-  const [sensorData, setSensorData] = useState({
+  const [sensorData, setSensorData] = useState<SensorData>({
     temperature: '--',
     humidity: '--',
     soilMoisture: '--',
@@ -32,7 +100,7 @@ export default function AgriGuardDashboard() {
     phSensorStatus: 'Offline',
     obstacleSensorStatus: 'Offline'
   });
-  const [weatherData] = useState({
+  const [weatherData, setWeatherData] = useState<WeatherData>({
     condition: 'Partly Cloudy',
     location: 'Cainta, Calabarzon',
     temperature: 0,
@@ -48,27 +116,25 @@ export default function AgriGuardDashboard() {
     alertAvailable: false,
     alerts: []
   });
-  const [robotStatus] = useState({
+  const [robotStatus, setRobotStatus] = useState<RobotStatus>({
     connected: false,
     waiting: true
   });
-  interface PlantingLogEntry {
-    time: string;
-    depth: string;
-    status: string;
-  }
-  const [plantingLog] = useState<PlantingLogEntry[]>([]);
-  const [totalPlantedToday] = useState(0);
-  type NotificationType = 'success' | 'error' | 'warning' | 'info';
-  interface Notification {
-    id: string | number;
-    type: NotificationType;
-    title: string;
-    message: string;
-  }
+  const [plantingLog, setPlantingLog] = useState<PlantingLogEntry[]>([]);
+  const [totalPlantedToday, setTotalPlantedToday] = useState(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [serialPort, setSerialPort] = useState<any>(null);
+  const [serialPort, setSerialPort] = useState<any | null>(null);
   const [isReading, setIsReading] = useState(false);
+  const readerRef = useRef<any>(null);
+  const readableClosedRef = useRef<Promise<void> | null>(null);
+
+  // Helper to add toast notifications (keeps UI behavior unchanged)
+  const addNotification = (type: NotificationType, title: string, message: string) => {
+    const id = Date.now().toString();
+    setNotifications(prev => [...prev, { id, type, title, message }]);
+    // Auto-remove after 8s
+    setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 8000);
+  };
 
   const ARDUINO_BOARDS = {
     'arduino:avr:uno': 'Arduino Uno',
@@ -79,9 +145,9 @@ export default function AgriGuardDashboard() {
     'esp32': 'ESP32',
     'esp8266': 'ESP8266',
     'unknown': 'Unknown Board'
-  };
+  } as Record<string, string>;
 
-  const detectBoardType = (usbProductId: any, productName: string | undefined) => {
+  const detectBoardType = (usbProductId: number, productName?: string): string => {
     if (productName) {
       const name = productName.toLowerCase();
       if (name.includes('uno')) return 'arduino:avr:uno';
@@ -105,18 +171,23 @@ export default function AgriGuardDashboard() {
     }
   };
 
-  const readSerialData = async (port: { readable: { getReader: () => any; }; }) => {
-    if (!port || !port.readable || isReading) return;
+  const readSerialData = async (port: any) => {
+    if (!port || isReading) return;
 
     setIsReading(true);
-    const reader = port.readable.getReader();
 
     try {
+      // Use TextDecoderStream for robust text parsing
+      const textDecoder = new TextDecoderStream();
+      // Pipe the port readable stream through decoder
+      readableClosedRef.current = port.readable.pipeTo(textDecoder.writable);
+      const reader = textDecoder.readable.getReader();
+      readerRef.current = reader;
+
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
-
-        const data = new TextDecoder().decode(value);
+        const data = value as string;
         console.log('Arduino data:', data);
 
         // Parse battery data
@@ -134,7 +205,7 @@ export default function AgriGuardDashboard() {
         const humMatch = data.match(/HUM:(\d+)/);
         const soilMatch = data.match(/SOIL:(\d+)/);
 
-        const sensorUpdates: { [key: string]: any } = {};
+  const sensorUpdates: Partial<SensorData> = {};
         if (tempMatch) sensorUpdates.temperature = tempMatch[1];
         if (humMatch) sensorUpdates.humidity = humMatch[1];
         if (soilMatch) sensorUpdates.soilMoisture = soilMatch[1];
@@ -151,23 +222,79 @@ export default function AgriGuardDashboard() {
     } catch (error) {
       console.error('Serial read error:', error);
     } finally {
-      reader.releaseLock();
+      try {
+        if (readerRef.current) {
+          await readerRef.current.cancel();
+          try { readerRef.current.releaseLock(); } catch {}
+          readerRef.current = null;
+        }
+      } catch (e) {
+        // ignore
+      }
+      // Wait for the piping to finish (if any)
+      try { if (readableClosedRef.current) await readableClosedRef.current; } catch {}
+      readableClosedRef.current = null;
       setIsReading(false);
     }
   };
 
   const connectArduino = async () => {
     if (!('serial' in navigator)) {
-      notifications('error', 'Not Supported', 'Web Serial API is not supported in this browser');
+      addNotification('error', 'Not Supported', 'Web Serial API is not supported in this browser');
+      return;
+    }
+
+    if (serialPort) {
+      addNotification('info', 'Already Connected', 'A serial port is already connected');
       return;
     }
 
     try {
-      const port = await (navigator as any).serial.requestPort();
-      await port.open({ baudRate: 9600 });
+      let port: any;
+      try {
+        // Prompt user to select a port. Add filters for common USB-serial vendors to make selection easier.
+        port = await (navigator as any).serial.requestPort({
+          filters: [
+            { usbVendorId: 0x2341 }, // Arduino SA
+            { usbVendorId: 0x2A03 }, // Arduino LLC (some clones)
+            { usbVendorId: 0x1A86 }, // CH340 USB-serial
+            { usbVendorId: 0x0403 }  // FTDI
+          ]
+        });
+      } catch (requestErr) {
+        // If requestPort was dismissed or blocked, try to use an already-opened port as a fallback
+        console.warn('requestPort failed, trying getPorts fallback', requestErr);
+        const ports = await (navigator as any).serial.getPorts();
+        if (ports && ports.length > 0) {
+          port = ports[0];
+          addNotification('info', 'Using Existing Port', 'Using previously granted serial port');
+        } else {
+          throw requestErr;
+        }
+      }
 
-      const info = port.getInfo();
-      const boardType = detectBoardType(info.usbProductId || 0);
+      // Some boards use 9600, others 115200, etc. Try a few common baud rates.
+      const baudOptions = [9600, 115200, 57600, 19200];
+      let opened = false;
+      for (const baud of baudOptions) {
+        try {
+          await port.open({ baudRate: baud });
+          console.log('Opened serial port at', baud);
+          opened = true;
+          break;
+        } catch (openErr) {
+          console.warn(`Failed to open at ${baud}`, openErr);
+          // If open failed, ensure port is closed before next attempt
+          try { if (typeof port.close === 'function') await port.close(); } catch (e) {}
+        }
+      }
+
+      if (!opened) {
+        throw new Error('Unable to open serial port at common baud rates (9600,115200,57600,19200)');
+      }
+
+  const info: any = (typeof port.getInfo === 'function') ? port.getInfo() : {};
+      const boardType = detectBoardType(info.usbProductId || 0, info.productName || '');
       const boardName = ARDUINO_BOARDS[boardType];
 
       // Determine if USB powered (100% battery when connected via USB)
@@ -187,20 +314,50 @@ export default function AgriGuardDashboard() {
         runtime: isUSBPowered ? 'Unlimited (USB)' : '0h'
       });
 
-      notifications('success', 'Arduino Connected', `${boardName} connected successfully via USB`);
+      addNotification('success', 'Arduino Connected', `${boardName} connected successfully via USB`);
 
-      // Start reading serial data
-      readSerialData(port);
+      // Verify readable/writable
+      if (!port.readable || !port.writable) {
+        addNotification('warning', 'Limited Port Access', 'Connected but no readable/writable streams detected');
+      }
 
-    } catch (error) {
+      // Start reading serial data (don't await)
+      readSerialData(port).catch(err => {
+        console.error('readSerialData error', err);
+        addNotification('error', 'Read Error', String((err as any)?.message || err));
+      });
+
+    } catch (error: any) {
       console.error('Connection error:', error);
-      notifications('error', 'Connection Failed', 'Failed to connect to Arduino');
+      const msg = error?.message || String(error);
+      // Provide suggestions for common causes
+      let suggestion = '';
+      if (error && (error.name === 'NotFoundError' || /not found/i.test(msg))) {
+        suggestion = 'No device selected or device not found. Ensure the Arduino is plugged in and you selected the correct device.';
+      } else if (error && /Failed to open serial port/i.test(msg)) {
+        suggestion = 'The port may be in use by another application (e.g., Arduino IDE). Close other apps that use the serial port and try again.';
+      } else if (error && error.name === 'SecurityError') {
+        suggestion = 'Permission blocked. Ensure your site is served over HTTPS or localhost and that you allowed the serial permission.';
+      }
+      addNotification('error', 'Connection Failed', `Failed to connect to Arduino: ${msg}${suggestion ? ' — ' + suggestion : ''}`);
     }
   };
 
   const disconnectArduino = async () => {
     if (serialPort) {
       try {
+        // cancel reader if active
+        try {
+          if (readerRef.current) {
+            await readerRef.current.cancel();
+            try { readerRef.current.releaseLock(); } catch {}
+            readerRef.current = null;
+          }
+        } catch (e) {}
+
+        // wait for pipe to close
+        try { if (readableClosedRef.current) await readableClosedRef.current; } catch {}
+
         await serialPort.close();
         setSerialPort(null);
         setArduinoStatus({
@@ -230,10 +387,53 @@ export default function AgriGuardDashboard() {
           phSensorStatus: 'Offline',
           obstacleSensorStatus: 'Offline'
         });
-        notifications('warning', 'Arduino Disconnected', 'Arduino has been disconnected');
+        addNotification('warning', 'Arduino Disconnected', 'Arduino has been disconnected');
       } catch (error) {
         console.error('Disconnect error:', error);
       }
+    }
+  };
+
+  // Debug helper - list available ports and attempt safe open tests
+  const debugSerial = async () => {
+    if (!('serial' in navigator)) {
+      addNotification('error', 'Not Supported', 'Web Serial API is not supported in this browser');
+      return;
+    }
+
+    try {
+      const ports = await (navigator as any).serial.getPorts();
+      if (!ports || ports.length === 0) {
+        addNotification('info', 'No Ports', 'No previously granted serial ports found. Use "Connect Arduino" to pick a device.');
+        return;
+      }
+
+      for (let i = 0; i < ports.length; i++) {
+        const p = ports[i];
+        const info: any = (typeof p.getInfo === 'function') ? p.getInfo() : {};
+        const vendor = info.usbVendorId ? '0x' + info.usbVendorId.toString(16) : 'unknown';
+        const product = info.usbProductId ? '0x' + info.usbProductId.toString(16) : 'unknown';
+
+        let openSucceeded = false;
+        try {
+          // Attempt open briefly to see if the port is available. Use a common baud.
+          if (!p.readable && !p.writable) {
+            // Try to open to get streams
+            await p.open({ baudRate: 9600 });
+            await p.close();
+          } else {
+            // If streams already present, try a no-op
+            openSucceeded = true;
+          }
+          openSucceeded = true;
+        } catch (e: any) {
+          openSucceeded = false;
+        }
+
+        addNotification('info', `Port ${i + 1}`, `vendor:${vendor} product:${product} open:${openSucceeded}`);
+      }
+    } catch (err: any) {
+      addNotification('error', 'Debug Failed', String(err?.message || err));
     }
   };
 
@@ -315,20 +515,29 @@ export default function AgriGuardDashboard() {
           <div className="mt-4 text-red-600 text-sm">No Arduino detected</div>
         )}
 
-        <button 
-          onClick={connectArduino}
-          disabled={arduinoStatus.connection === 'CONNECTED'}
-          className="w-full mt-6 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-3 rounded-lg transition-colors"
-        >
-          Connect Arduino
-        </button>
-        <button
-          onClick={disconnectArduino}
-          disabled={arduinoStatus.connection !== 'CONNECTED'}
-          className="w-full mt-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-semibold py-3 rounded-lg transition-colors"
-        >
-          Disconnect Arduino
-        </button>
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          {arduinoStatus.connection === 'DISCONNECTED' ? (
+            <button 
+              onClick={connectArduino}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors"
+            >
+              Connect Arduino
+            </button>
+          ) : (
+            <button 
+              onClick={disconnectArduino}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 rounded-lg transition-colors"
+            >
+              Disconnect Arduino
+            </button>
+          )}
+          <button
+            onClick={debugSerial}
+            className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 rounded-lg transition-colors"
+          >
+            Debug Serial
+          </button>
+        </div>
       </div>
 
       <div className="space-y-6">
@@ -540,13 +749,13 @@ export default function AgriGuardDashboard() {
           <div className="bg-gray-50 rounded-lg p-4">
             <h3 className="font-semibold text-gray-800 mb-3">Threshold Alerts</h3>
             <div className="space-y-2 text-sm">
-              {sensorData.soilMoisture !== '--' && parseInt(sensorData.soilMoisture) < 30 && (
+              {sensorData.soilMoisture !== '--' && parseInt(String(sensorData.soilMoisture)) < 30 && (
                 <div className="flex items-center text-amber-700">
                   <AlertCircle className="w-4 h-4 mr-2" />
                   Soil moisture low - irrigation recommended
                 </div>
               )}
-              {sensorData.temperature !== '--' && parseInt(sensorData.temperature) > 32 && (
+              {sensorData.temperature !== '--' && parseInt(String(sensorData.temperature)) > 32 && (
                 <div className="flex items-center text-red-700">
                   <AlertCircle className="w-4 h-4 mr-2" />
                   High temperature detected
@@ -743,7 +952,7 @@ export default function AgriGuardDashboard() {
             <tbody>
               {plantingLog.length === 0 ? (
                 <tr>
-                  <td colSpan="3" className="text-center py-8 text-gray-500">No planting events recorded today</td>
+                  <td colSpan={3} className="text-center py-8 text-gray-500">No planting events recorded today</td>
                 </tr>
               ) : (
                 plantingLog.map((log, idx) => (
@@ -839,7 +1048,7 @@ export default function AgriGuardDashboard() {
             </div>
           )}
 
-          {sensorData.soilMoisture !== '--' && parseInt(sensorData.soilMoisture) < 30 && (
+          {sensorData.soilMoisture !== '--' && parseInt(String(sensorData.soilMoisture)) < 30 && (
             <div className="bg-orange-50 border-l-4 border-orange-500 p-4 rounded">
               <div className="flex items-start">
                 <Droplet className="w-5 h-5 text-orange-600 mr-3 mt-0.5 flex-shrink-0" />
@@ -903,16 +1112,6 @@ export default function AgriGuardDashboard() {
       {renderPlantingLog()}
     </div>
   );
-
-  // Sidebar menu items definition
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Gauge },
-    { id: 'microcontroller', label: 'Microcontroller', icon: Cpu },
-    { id: 'sensors', label: 'Sensors', icon: Activity },
-    { id: 'weather', label: 'Weather', icon: Cloud },
-    { id: 'planting-log', label: 'Planting Log', icon: MapPin },
-    { id: 'errors', label: 'Errors', icon: AlertTriangle }
-  ];
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden m-0 p-0" style={{ margin: 0, padding: 0, width: '100vw', maxWidth: '100vw' }}>
@@ -999,7 +1198,7 @@ export default function AgriGuardDashboard() {
           )}
 
           <nav className="flex-1 overflow-y-auto py-2 px-2">
-            {menuItems.map((item: { icon: any; id: string | number | bigint | ((prevState: string) => string) | null | undefined; label: string | number | boolean | React.ReactElement<any, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | null | undefined; }) => {
+            {menuItems.map((item) => {
               const Icon = item.icon;
               const isActive = currentPage === item.id;
               return (
