@@ -66,7 +66,7 @@ const menuItems: MenuItem[] = [
   { id: 'sensors', label: 'Sensors', icon: Activity },
   { id: 'weather', label: 'Weather', icon: Cloud },
   { id: 'planting-log', label: 'Planting Log', icon: MapPin },
-  { id: 'error & notifications', label: 'error & notifications', icon: AlertTriangle }
+  { id: 'errors', label: 'errors', icon: AlertTriangle }
 ];
 
 export default function AgriGuardDashboard() {
