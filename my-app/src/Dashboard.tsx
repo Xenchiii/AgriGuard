@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Menu, X, Gauge, Cpu, Activity, Cloud, Clock, AlertTriangle, ChevronRight, RefreshCw, Shield, Wifi, Zap, Thermometer, Battery, Sun, Droplet, Wind, CloudRain, AlertCircle, TrendingUp, Download, Settings, MapPin } from 'lucide-react';
 
 export default function AgriGuardDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile] = useState(false);
   const [arduinoStatus, setArduinoStatus] = useState({
     board: 'Unknown Board',
     connection: 'DISCONNECTED',
@@ -32,7 +32,7 @@ export default function AgriGuardDashboard() {
     phSensorStatus: 'Offline',
     obstacleSensorStatus: 'Offline'
   });
-  const [weatherData, setWeatherData] = useState({
+  const [weatherData] = useState({
     condition: 'Partly Cloudy',
     location: 'Cainta, Calabarzon',
     temperature: 0,
@@ -48,14 +48,26 @@ export default function AgriGuardDashboard() {
     alertAvailable: false,
     alerts: []
   });
-  const [robotStatus, setRobotStatus] = useState({
+  const [robotStatus] = useState({
     connected: false,
     waiting: true
   });
-  const [plantingLog, setPlantingLog] = useState([]);
-  const [totalPlantedToday, setTotalPlantedToday] = useState(0);
-  const [notifications, setNotifications] = useState([]);
-  const [serialPort, setSerialPort] = useState(null);
+  interface PlantingLogEntry {
+    time: string;
+    depth: string;
+    status: string;
+  }
+  const [plantingLog] = useState<PlantingLogEntry[]>([]);
+  const [totalPlantedToday] = useState(0);
+  type NotificationType = 'success' | 'error' | 'warning' | 'info';
+  interface Notification {
+    id: string | number;
+    type: NotificationType;
+    title: string;
+    message: string;
+  }
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [serialPort, setSerialPort] = useState<any>(null);
   const [isReading, setIsReading] = useState(false);
 
   const ARDUINO_BOARDS = {
@@ -69,7 +81,7 @@ export default function AgriGuardDashboard() {
     'unknown': 'Unknown Board'
   };
 
-  const detectBoardType = (usbProductId, productName) => {
+  const detectBoardType = (usbProductId: any, productName: string | undefined) => {
     if (productName) {
       const name = productName.toLowerCase();
       if (name.includes('uno')) return 'arduino:avr:uno';
@@ -93,7 +105,7 @@ export default function AgriGuardDashboard() {
     }
   };
 
-  const readSerialData = async (port) => {
+  const readSerialData = async (port: { readable: { getReader: () => any; }; }) => {
     if (!port || !port.readable || isReading) return;
 
     setIsReading(true);
@@ -122,7 +134,7 @@ export default function AgriGuardDashboard() {
         const humMatch = data.match(/HUM:(\d+)/);
         const soilMatch = data.match(/SOIL:(\d+)/);
 
-        const sensorUpdates = {};
+        const sensorUpdates: { [key: string]: any } = {};
         if (tempMatch) sensorUpdates.temperature = tempMatch[1];
         if (humMatch) sensorUpdates.humidity = humMatch[1];
         if (soilMatch) sensorUpdates.soilMoisture = soilMatch[1];
@@ -146,12 +158,12 @@ export default function AgriGuardDashboard() {
 
   const connectArduino = async () => {
     if (!('serial' in navigator)) {
-      addNotification('error', 'Not Supported', 'Web Serial API is not supported in this browser');
+      notifications('error', 'Not Supported', 'Web Serial API is not supported in this browser');
       return;
     }
 
     try {
-      const port = await navigator.serial.requestPort();
+      const port = await (navigator as any).serial.requestPort();
       await port.open({ baudRate: 9600 });
 
       const info = port.getInfo();
@@ -175,14 +187,14 @@ export default function AgriGuardDashboard() {
         runtime: isUSBPowered ? 'Unlimited (USB)' : '0h'
       });
 
-      addNotification('success', 'Arduino Connected', `${boardName} connected successfully via USB`);
+      notifications('success', 'Arduino Connected', `${boardName} connected successfully via USB`);
 
       // Start reading serial data
       readSerialData(port);
 
     } catch (error) {
       console.error('Connection error:', error);
-      addNotification('error', 'Connection Failed', 'Failed to connect to Arduino');
+      notifications('error', 'Connection Failed', 'Failed to connect to Arduino');
     }
   };
 
@@ -218,7 +230,7 @@ export default function AgriGuardDashboard() {
           phSensorStatus: 'Offline',
           obstacleSensorStatus: 'Offline'
         });
-        addNotification('warning', 'Arduino Disconnected', 'Arduino has been disconnected');
+        notifications('warning', 'Arduino Disconnected', 'Arduino has been disconnected');
       } catch (error) {
         console.error('Disconnect error:', error);
       }
@@ -309,6 +321,13 @@ export default function AgriGuardDashboard() {
           className="w-full mt-6 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-3 rounded-lg transition-colors"
         >
           Connect Arduino
+        </button>
+        <button
+          onClick={disconnectArduino}
+          disabled={arduinoStatus.connection !== 'CONNECTED'}
+          className="w-full mt-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-semibold py-3 rounded-lg transition-colors"
+        >
+          Disconnect Arduino
         </button>
       </div>
 
@@ -885,6 +904,16 @@ export default function AgriGuardDashboard() {
     </div>
   );
 
+  // Sidebar menu items definition
+  const menuItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: Gauge },
+    { id: 'microcontroller', label: 'Microcontroller', icon: Cpu },
+    { id: 'sensors', label: 'Sensors', icon: Activity },
+    { id: 'weather', label: 'Weather', icon: Cloud },
+    { id: 'planting-log', label: 'Planting Log', icon: MapPin },
+    { id: 'errors', label: 'Errors', icon: AlertTriangle }
+  ];
+
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden m-0 p-0" style={{ margin: 0, padding: 0, width: '100vw', maxWidth: '100vw' }}>
       <style>{`
@@ -970,7 +999,7 @@ export default function AgriGuardDashboard() {
           )}
 
           <nav className="flex-1 overflow-y-auto py-2 px-2">
-            {menuItems.map((item) => {
+            {menuItems.map((item: { icon: any; id: string | number | bigint | ((prevState: string) => string) | null | undefined; label: string | number | boolean | React.ReactElement<any, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | null | undefined; }) => {
               const Icon = item.icon;
               const isActive = currentPage === item.id;
               return (
