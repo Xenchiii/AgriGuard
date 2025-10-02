@@ -55,90 +55,174 @@ export default function AgriGuardDashboard() {
   const [plantingLog, setPlantingLog] = useState([]);
   const [totalPlantedToday, setTotalPlantedToday] = useState(0);
   const [notifications, setNotifications] = useState([]);
+  const [serialPort, setSerialPort] = useState(null);
+  const [isReading, setIsReading] = useState(false);
 
-  const addNotification = (type, title, message) => {
-    const id = Date.now();
-    const notification = { id, type, title, message };
-    setNotifications(prev => [...prev, notification]);
-    
-    // Auto remove after 5 seconds
-    setTimeout(() => {
-      setNotifications(prev => prev.filter(n => n.id !== id));
-    }, 5000);
+  const ARDUINO_BOARDS = {
+    'arduino:avr:uno': 'Arduino Uno',
+    'arduino:avr:nano': 'Arduino Nano',
+    'arduino:avr:mega': 'Arduino Mega 2560',
+    'arduino:avr:leonardo': 'Arduino Leonardo',
+    'arduino:avr:micro': 'Arduino Micro',
+    'esp32': 'ESP32',
+    'esp8266': 'ESP8266',
+    'unknown': 'Unknown Board'
   };
 
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-      if (window.innerWidth < 768) {
-        setSidebarOpen(false);
+  const detectBoardType = (usbProductId, productName) => {
+    if (productName) {
+      const name = productName.toLowerCase();
+      if (name.includes('uno')) return 'arduino:avr:uno';
+      if (name.includes('nano')) return 'arduino:avr:nano';
+      if (name.includes('mega')) return 'arduino:avr:mega';
+      if (name.includes('leonardo')) return 'arduino:avr:leonardo';
+      if (name.includes('micro')) return 'arduino:avr:micro';
+      if (name.includes('esp32')) return 'esp32';
+      if (name.includes('esp8266')) return 'esp8266';
+    }
+
+    switch (usbProductId) {
+      case 0x0043: return 'arduino:avr:uno';
+      case 0x0036: return 'arduino:avr:leonardo';
+      case 0x8036: return 'arduino:avr:leonardo';
+      case 0x0037: return 'arduino:avr:micro';
+      case 0x8037: return 'arduino:avr:micro';
+      case 0x0042: return 'arduino:avr:mega';
+      case 0x0010: return 'arduino:avr:mega';
+      default: return 'unknown';
+    }
+  };
+
+  const readSerialData = async (port) => {
+    if (!port || !port.readable || isReading) return;
+
+    setIsReading(true);
+    const reader = port.readable.getReader();
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const data = new TextDecoder().decode(value);
+        console.log('Arduino data:', data);
+
+        // Parse battery data
+        const batteryMatch = data.match(/BAT:(\d+)/);
+        if (batteryMatch) {
+          const batteryLevel = parseInt(batteryMatch[1]);
+          setArduinoStatus(prev => ({
+            ...prev,
+            battery: batteryLevel
+          }));
+        }
+
+        // Parse sensor data
+        const tempMatch = data.match(/TEMP:([\d.-]+)/);
+        const humMatch = data.match(/HUM:(\d+)/);
+        const soilMatch = data.match(/SOIL:(\d+)/);
+
+        const sensorUpdates = {};
+        if (tempMatch) sensorUpdates.temperature = tempMatch[1];
+        if (humMatch) sensorUpdates.humidity = humMatch[1];
+        if (soilMatch) sensorUpdates.soilMoisture = soilMatch[1];
+
+        if (Object.keys(sensorUpdates).length > 0) {
+          setSensorData(prev => ({
+            ...prev,
+            ...sensorUpdates,
+            dht22Status: 'Online',
+            soilSensorStatus: 'Online'
+          }));
+        }
       }
-    };
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
-  // Monitor Arduino connection changes
-  useEffect(() => {
-    if (arduinoStatus.connection === 'CONNECTED' && arduinoStatus.detected) {
-      addNotification('success', 'Arduino Connected', `${arduinoStatus.board} connected successfully`);
-    } else if (arduinoStatus.connection === 'DISCONNECTED' && arduinoStatus.detected === false) {
-      addNotification('warning', 'Arduino Disconnected', 'Please connect your Arduino to monitor sensor data');
+    } catch (error) {
+      console.error('Serial read error:', error);
+    } finally {
+      reader.releaseLock();
+      setIsReading(false);
     }
-  }, [arduinoStatus.connection, arduinoStatus.detected]);
+  };
 
-  // Monitor sensor data changes
-  useEffect(() => {
-    if (sensorData.dht22Status === 'Online') {
-      addNotification('info', 'Sensors Online', 'DHT22 sensor is now active');
+  const connectArduino = async () => {
+    if (!('serial' in navigator)) {
+      addNotification('error', 'Not Supported', 'Web Serial API is not supported in this browser');
+      return;
     }
-  }, [sensorData.dht22Status]);
 
-  // Monitor robot status
-  useEffect(() => {
-    if (!robotStatus.connected) {
-      addNotification('error', 'Robot Offline', 'GPS tracking and planting functions unavailable');
+    try {
+      const port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 9600 });
+
+      const info = port.getInfo();
+      const boardType = detectBoardType(info.usbProductId || 0);
+      const boardName = ARDUINO_BOARDS[boardType];
+
+      // Determine if USB powered (100% battery when connected via USB)
+      const isUSBPowered = info.usbVendorId !== undefined;
+
+      setSerialPort(port);
+      setArduinoStatus({
+        board: boardName,
+        connection: 'CONNECTED',
+        battery: isUSBPowered ? 100 : 0,
+        detected: true,
+        signalStrength: 100,
+        uptime: '0h 0m',
+        mcuTemp: 0,
+        charging: isUSBPowered,
+        voltage: 5.0,
+        runtime: isUSBPowered ? 'Unlimited (USB)' : '0h'
+      });
+
+      addNotification('success', 'Arduino Connected', `${boardName} connected successfully via USB`);
+
+      // Start reading serial data
+      readSerialData(port);
+
+    } catch (error) {
+      console.error('Connection error:', error);
+      addNotification('error', 'Connection Failed', 'Failed to connect to Arduino');
     }
-  }, [robotStatus.connected]);
+  };
 
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Gauge },
-    { id: 'microcontroller', label: 'Microcontroller', icon: Cpu },
-    { id: 'sensors', label: 'Sensors', icon: Activity },
-    { id: 'weather', label: 'Weather', icon: Cloud },
-    { id: 'planting-log', label: 'Planting Log', icon: Clock },
-    { id: 'errors', label: 'Errors & Notifications', icon: AlertTriangle }
-  ];
-
-  const connectArduino = () => {
-    setArduinoStatus({
-      board: 'Arduino Uno',
-      connection: 'CONNECTED',
-      battery: 85,
-      detected: true,
-      signalStrength: 78,
-      uptime: '2h 34m',
-      mcuTemp: 42,
-      charging: false,
-      voltage: 3.7,
-      runtime: '6h 15m'
-    });
-    setSensorData({
-      temperature: '28',
-      humidity: '65',
-      soilMoisture: '45',
-      lightIntensity: '78',
-      soilTemp: '24',
-      airQuality: '92',
-      phLevel: '6.8',
-      obstacleDistance: '120',
-      dht22Status: 'Online',
-      soilSensorStatus: 'Online',
-      lightSensorStatus: 'Online',
-      phSensorStatus: 'Online',
-      obstacleSensorStatus: 'Online'
-    });
+  const disconnectArduino = async () => {
+    if (serialPort) {
+      try {
+        await serialPort.close();
+        setSerialPort(null);
+        setArduinoStatus({
+          board: 'Unknown Board',
+          connection: 'DISCONNECTED',
+          battery: 0,
+          detected: false,
+          signalStrength: 0,
+          uptime: '0h 0m',
+          mcuTemp: 0,
+          charging: false,
+          voltage: 0,
+          runtime: '0h'
+        });
+        setSensorData({
+          temperature: '--',
+          humidity: '--',
+          soilMoisture: '--',
+          lightIntensity: '--',
+          soilTemp: '--',
+          airQuality: '--',
+          phLevel: '--',
+          obstacleDistance: '--',
+          dht22Status: 'Offline',
+          soilSensorStatus: 'Offline',
+          lightSensorStatus: 'Offline',
+          phSensorStatus: 'Offline',
+          obstacleSensorStatus: 'Offline'
+        });
+        addNotification('warning', 'Arduino Disconnected', 'Arduino has been disconnected');
+      } catch (error) {
+        console.error('Disconnect error:', error);
+      }
+    }
   };
 
   const renderMicrocontroller = () => (
