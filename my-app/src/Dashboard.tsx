@@ -1040,7 +1040,7 @@ export default function AgriGuardDashboard() {
   );
 
   return (
-    <div className="flex h-screen bg-gray-100 overflow-hidden m-0 p-0">
+    <div className="flex h-screen bg-gray-100 overflow-hidden">
       <style>{`
         @keyframes slideInRight {
           from {
@@ -1176,9 +1176,9 @@ export default function AgriGuardDashboard() {
               {currentPage !== 'microcontroller' && (
                 <button 
                   onClick={() => setCurrentPage('microcontroller')}
-                  className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="w-10 h-10 bg-gray-900 hover:bg-gray-800 rounded-lg flex items-center justify-center transition-colors"
                 >
-                  <ChevronRight className="w-5 h-5 text-gray-600 rotate-180" />
+                  <ChevronRight className="w-5 h-5 text-white rotate-180" />
                 </button>
               )}
               
@@ -1202,7 +1202,7 @@ export default function AgriGuardDashboard() {
           </div>
         </div>
 
-        <div className="w-full px-6 py-6 space-y-6">
+        <div className="p-6">
           {currentPage === 'microcontroller' && renderMicrocontroller()}
           {currentPage === 'sensors' && renderSensors()}
           {currentPage === 'weather' && renderWeather()}
