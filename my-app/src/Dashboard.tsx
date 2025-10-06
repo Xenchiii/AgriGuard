@@ -402,7 +402,7 @@ export default function AgriGuardDashboard() {
   };
 
   const renderMicrocontroller = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-800">Arduino Status</h2>
@@ -1171,16 +1171,6 @@ export default function AgriGuardDashboard() {
               
               {/* Separator */}
               <div className="h-6 w-px bg-gray-300"></div>
-              
-              {/* Back Button - only show if not on first page */}
-              {currentPage !== 'microcontroller' && (
-                <button 
-                  onClick={() => setCurrentPage('microcontroller')}
-                  className="w-10 h-10 bg-gray-900 hover:bg-gray-800 rounded-lg flex items-center justify-center transition-colors"
-                >
-                  <ChevronRight className="w-5 h-5 text-white rotate-180" />
-                </button>
-              )}
               
               {/* Dynamic Page Title */}
               <h1 className="text-2xl font-bold text-gray-800 capitalize">
