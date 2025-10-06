@@ -568,8 +568,7 @@ export default function AgriGuardDashboard() {
   );
 
   const renderSensors = () => (
-    <div className="w-full">
-      <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center">
             <Activity className="w-6 h-6 text-emerald-600 mr-3" />
@@ -749,8 +748,7 @@ export default function AgriGuardDashboard() {
   );
 
   const renderWeather = () => (
-    <div className="w-full">
-      <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center mb-6">
           <Cloud className="w-6 h-6 text-blue-600 mr-3" />
           <h2 className="text-2xl font-bold text-gray-800">Weather Conditions</h2>
@@ -891,7 +889,7 @@ export default function AgriGuardDashboard() {
   );
 
   const renderPlantingLog = () => (
-    <div className="w-full space-y-6">
+    <div className="space-y-6">
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-2xl font-bold text-gray-800 mb-2">Precision Planting Log</h2>
         <p className="text-gray-600 mb-6">Live feed of actual seed planting events with GPS coordinates (Philippines time).</p>
@@ -965,8 +963,7 @@ export default function AgriGuardDashboard() {
   );
 
   const renderErrors = () => (
-    <div className="w-full">
-      <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center mb-6">
           <AlertTriangle className="w-6 h-6 text-red-600 mr-3" />
           <h2 className="text-2xl font-bold text-gray-800">Errors & Notifications</h2>
@@ -1192,7 +1189,7 @@ export default function AgriGuardDashboard() {
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="p-6 max-w-full">
           {currentPage === 'microcontroller' && renderMicrocontroller()}
           {currentPage === 'sensors' && renderSensors()}
           {currentPage === 'weather' && renderWeather()}
