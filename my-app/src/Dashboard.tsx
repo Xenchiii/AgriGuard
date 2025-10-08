@@ -487,6 +487,13 @@ export default function AgriGuardDashboard() {
               </div>
               <Clock className="w-10 h-10 text-purple-600" />
             </div>
+            <div className="flex items-center justify-between p-3 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg">
+              <div>
+                <div className="text-sm text-gray-600">Estimated Runtime</div>
+                <div className="text-xl font-bold text-gray-800">{arduinoStatus.runtime}</div>
+              </div>
+              <Clock className="w-10 h-10 text-purple-600" />
+            </div>
           </div>
         </div>
       </div>
