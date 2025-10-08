@@ -420,6 +420,10 @@ export default function AgriGuardDashboard() {
               Disconnect Arduino
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  );
           <button onClick={debugSerial} className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 rounded-lg">
             Debug Serial
           </button>
@@ -490,48 +494,422 @@ export default function AgriGuardDashboard() {
   );
 
   const renderSensors = () => (
-    <div className="w-full bg-white rounded-lg shadow-md p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">Sensor Readings</h2>
-      <p className="text-gray-600 mb-6">Live data from Arduino sensors</p>
-      <div className="text-center py-12 text-gray-500">
-        <Activity className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-        <p>Sensor data display</p>
+    <div className="w-full">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center">
+            <Activity className="w-6 h-6 text-emerald-600 mr-3" />
+            <h2 className="text-2xl font-bold text-gray-800">Sensor Readings</h2>
+          </div>
+          <div className="flex gap-2">
+            <button className="p-2 bg-white hover:bg-gray-50 rounded-lg transition-colors border border-gray-200">
+              <Download className="w-5 h-5 text-emerald-600" />
+            </button>
+            <button className="p-2 bg-white hover:bg-gray-50 rounded-lg transition-colors border border-gray-200">
+              <Settings className="w-5 h-5 text-emerald-600" />
+            </button>
+          </div>
+        </div>
+        
+        <p className="text-gray-600 mb-6">Live data from Arduino sensors</p>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full ${sensorData.dht22Status === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
+            <Thermometer className="w-10 h-10 text-red-500 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.temperature}°C</div>
+            <div className="text-sm text-gray-600">Temperature</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full ${sensorData.dht22Status === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
+            <Droplet className="w-10 h-10 text-blue-500 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.humidity}%</div>
+            <div className="text-sm text-gray-600">Air Humidity</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full ${sensorData.soilSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
+            <Activity className="w-10 h-10 text-amber-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.soilMoisture}%</div>
+            <div className="text-sm text-gray-600">Soil Moisture</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full ${sensorData.lightSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
+            <Sun className="w-10 h-10 text-yellow-500 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.lightIntensity}%</div>
+            <div className="text-sm text-gray-600">Light Intensity</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full ${sensorData.soilSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
+            <Thermometer className="w-10 h-10 text-orange-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.soilTemp}°C</div>
+            <div className="text-sm text-gray-600">Soil Temperature</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full bg-green-500`}></div>
+            </div>
+            <Activity className="w-10 h-10 text-green-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.airQuality}</div>
+            <div className="text-sm text-gray-600">Air Quality</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full ${sensorData.phSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
+            <Droplet className="w-10 h-10 text-purple-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.phLevel}</div>
+            <div className="text-sm text-gray-600">pH Level</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 rounded-lg p-4 text-center relative">
+            <div className="absolute top-2 right-2">
+              <div className={`w-2 h-2 rounded-full ${sensorData.obstacleSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            </div>
+            <AlertCircle className="w-10 h-10 text-cyan-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.obstacleDistance}cm</div>
+            <div className="text-sm text-gray-600">Obstacle Distance</div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h3 className="font-semibold text-gray-800 mb-3">Sensor Status</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span>DHT22/AM2302:</span>
+                <span className={sensorData.dht22Status === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.dht22Status}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Soil Moisture:</span>
+                <span className={sensorData.soilSensorStatus === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.soilSensorStatus}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Light Sensor:</span>
+                <span className={sensorData.lightSensorStatus === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.lightSensorStatus}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>pH Sensor:</span>
+                <span className={sensorData.phSensorStatus === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.phSensorStatus}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Obstacle Sensor:</span>
+                <span className={sensorData.obstacleSensorStatus === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.obstacleSensorStatus}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h3 className="font-semibold text-gray-800 mb-3">Threshold Alerts</h3>
+            <div className="space-y-2 text-sm">
+              {sensorData.soilMoisture !== '--' && parseInt(String(sensorData.soilMoisture)) < 30 && (
+                <div className="flex items-center text-amber-700">
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  Soil moisture low - irrigation recommended
+                </div>
+              )}
+              {sensorData.temperature !== '--' && parseInt(String(sensorData.temperature)) > 32 && (
+                <div className="flex items-center text-red-700">
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  High temperature detected
+                </div>
+              )}
+              {arduinoStatus.connection === 'DISCONNECTED' && (
+                <div className="flex items-center text-gray-600">
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  Connect Arduino for live monitoring
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {arduinoStatus.connection === 'DISCONNECTED' && (
+          <div className="mt-6 bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start">
+            <AlertTriangle className="w-5 h-5 text-amber-600 mr-3 mt-0.5 flex-shrink-0" />
+            <div>
+              <div className="font-semibold text-amber-900">Arduino Not Connected</div>
+              <div className="text-sm text-amber-700 mt-1">Connect your Arduino to see live sensor readings</div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 
   const renderWeather = () => (
-    <div className="w-full bg-white rounded-lg shadow-md p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">Weather Conditions</h2>
-      <p className="text-gray-600 mb-6">External weather data for {weatherData.location}</p>
-      <div className="text-center py-12 text-gray-500">
-        <Cloud className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-        <p>Weather data display</p>
+    <div className="w-full">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center mb-6">
+          <Cloud className="w-6 h-6 text-blue-600 mr-3" />
+          <h2 className="text-2xl font-bold text-gray-800">Weather Conditions</h2>
+        </div>
+        
+        <p className="text-gray-600 mb-6">External weather data for {weatherData.location}</p>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 text-center">
+            <Thermometer className="w-10 h-10 text-blue-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.temperature}°C</div>
+            <div className="text-sm text-gray-600">Temperature</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 rounded-lg p-4 text-center">
+            <Droplet className="w-10 h-10 text-cyan-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.humidity}%</div>
+            <div className="text-sm text-gray-600">Humidity</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-4 text-center">
+            <CloudRain className="w-10 h-10 text-indigo-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.rainfall}%</div>
+            <div className="text-sm text-gray-600">Rain Chance</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-teal-50 to-teal-100 rounded-lg p-4 text-center">
+            <Wind className="w-10 h-10 text-teal-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.windSpeed} km/h</div>
+            <div className="text-sm text-gray-600">Wind ({weatherData.windDirection})</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-4 text-center">
+            <Sun className="w-10 h-10 text-yellow-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.uvIndex}</div>
+            <div className="text-sm text-gray-600">UV Index</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-4 text-center">
+            <Cloud className="w-10 h-10 text-gray-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.cloudCover}%</div>
+            <div className="text-sm text-gray-600">Cloud Cover</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 text-center">
+            <TrendingUp className="w-10 h-10 text-green-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.evapotranspiration}</div>
+            <div className="text-sm text-gray-600">ET (mm/day)</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 text-center">
+            <Activity className="w-10 h-10 text-purple-600 mx-auto mb-2" />
+            <div className="text-3xl font-bold text-gray-800 mb-1">{weatherData.growingDegreeDays}</div>
+            <div className="text-sm text-gray-600">Growing Degree Days</div>
+          </div>
+        </div>
+
+        <div className="text-center py-6 mb-6 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg">
+          <div className="text-4xl font-bold text-gray-800 mb-2">{weatherData.condition}</div>
+          <div className="text-gray-600">Current weather conditions</div>
+        </div>
+
+        <div className="mb-6">
+          <h3 className="text-lg font-bold text-gray-800 mb-4">Today's Forecast</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+              <div className="font-semibold text-blue-900 mb-1">Morning</div>
+              <div className="text-sm text-blue-700">24°C, Clear skies</div>
+            </div>
+            <div className="bg-orange-50 border-l-4 border-orange-500 p-4 rounded">
+              <div className="font-semibold text-orange-900 mb-1">Afternoon</div>
+              <div className="text-sm text-orange-700">32°C, Partly cloudy</div>
+            </div>
+            <div className="bg-indigo-50 border-l-4 border-indigo-500 p-4 rounded">
+              <div className="font-semibold text-indigo-900 mb-1">Evening</div>
+              <div className="text-sm text-indigo-700">26°C, Clear</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <h3 className="text-lg font-bold text-gray-800 mb-4">Agriculture-Specific Indicators</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+              <div className="font-semibold text-green-900 mb-1">Evapotranspiration (ET)</div>
+              <div className="text-sm text-green-700">{weatherData.evapotranspiration} mm/day - Moderate water loss</div>
+            </div>
+            <div className="bg-cyan-50 border-l-4 border-cyan-500 p-4 rounded">
+              <div className="font-semibold text-cyan-900 mb-1">Soil Drying Prediction</div>
+              <div className="text-sm text-cyan-700">Moderate - irrigation recommended within 2 days</div>
+            </div>
+            <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+              <div className="font-semibold text-blue-900 mb-1">Frost Risk</div>
+              <div className="text-sm text-blue-700">{weatherData.frostRisk} - no protective measures needed tonight</div>
+            </div>
+            <div className="bg-purple-50 border-l-4 border-purple-500 p-4 rounded">
+              <div className="font-semibold text-purple-900 mb-1">Growing Degree Days (GDD)</div>
+              <div className="text-sm text-purple-700">{weatherData.growingDegreeDays} accumulated today</div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-lg font-bold text-gray-800 mb-4">Weather Alerts & Notifications</h3>
+          <div className="space-y-3">
+            <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded flex items-start">
+              <CloudRain className="w-5 h-5 text-blue-600 mr-3 mt-0.5 flex-shrink-0" />
+              <div>
+                <div className="font-semibold text-blue-900">Rain Alert</div>
+                <div className="text-sm text-blue-700">Rain expected in 2 hours - {weatherData.rainfall}% probability</div>
+              </div>
+            </div>
+            <div className="bg-orange-50 border-l-4 border-orange-500 p-4 rounded flex items-start">
+              <Wind className="w-5 h-5 text-orange-600 mr-3 mt-0.5 flex-shrink-0" />
+              <div>
+                <div className="font-semibold text-orange-900">Strong Wind Warning</div>
+                <div className="text-sm text-orange-700">Wind speeds may reach 30 km/h - secure lightweight equipment</div>
+              </div>
+            </div>
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded flex items-start">
+              <Sun className="w-5 h-5 text-red-600 mr-3 mt-0.5 flex-shrink-0" />
+              <div>
+                <div className="font-semibold text-red-900">Extreme Heat Warning</div>
+                <div className="text-sm text-red-700">Temp may exceed 35°C - irrigation recommended for sensitive crops</div>
+              </div>
+            </div>
+            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded flex items-start">
+              <AlertTriangle className="w-5 h-5 text-amber-600 mr-3 mt-0.5 flex-shrink-0" />
+              <div>
+                <div className="font-semibold text-amber-900">Weather Alert</div>
+                <div className="text-sm text-amber-700">Unable to fetch current weather alerts for your location</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 
   const renderPlantingLog = () => (
-    <div className="w-full bg-white rounded-lg shadow-md p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">Planting Log</h2>
-      <p className="text-gray-600 mb-6">Live feed of seed planting events (Philippines time)</p>
-      <div className="text-center py-12 text-gray-500">
-        <MapPin className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-        <p>No planting events recorded today</p>
+    <div className="w-full space-y-6">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">Precision Planting Log</h2>
+        <p className="text-gray-600 mb-6">Live feed of actual seed planting events with GPS coordinates (Philippines time).</p>
+        
+        <div className="mb-6">
+          <span className="text-gray-700">Total planted today: </span>
+          <span className="text-emerald-600 font-bold text-xl">{totalPlantedToday}</span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b-2 border-gray-200">
+                <th className="text-left py-3 px-2 text-gray-700 font-semibold">
+                  <Clock className="w-4 h-4 inline mr-2" />
+                  Time (PHT)
+                </th>
+                <th className="text-left py-3 px-2 text-gray-700 font-semibold">Depth</th>
+                <th className="text-left py-3 px-2 text-gray-700 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plantingLog.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="text-center py-8 text-gray-500">No planting events recorded today</td>
+                </tr>
+              ) : (
+                plantingLog.map((log, idx) => (
+                  <tr key={idx} className="border-b border-gray-100">
+                    <td className="py-3 px-2">{log.time}</td>
+                    <td className="py-3 px-2">{log.depth}</td>
+                    <td className="py-3 px-2">
+                      <span className={`px-2 py-1 rounded text-sm ${log.status === 'Success' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                        {log.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center mb-6">
+          <MapPin className="w-6 h-6 text-emerald-600 mr-3" />
+          <h2 className="text-2xl font-bold text-gray-800">Live Farm Tracking</h2>
+        </div>
+        
+        <p className="text-gray-600 mb-6">Real-time GPS tracking with precision planting markers.</p>
+
+        <div className="flex items-center text-red-600 mb-6">
+          <X className="w-5 h-5 mr-2" />
+          <span className="font-semibold">Offline</span>
+        </div>
+
+        <div className="text-center py-12 bg-gray-50 rounded-lg">
+          <div className="w-24 h-24 bg-gray-300 rounded-full flex items-center justify-center mx-auto mb-4">
+            <MapPin className="w-12 h-12 text-gray-500" />
+          </div>
+          <div className="text-xl font-semibold text-gray-800 mb-2">No Robot Connected</div>
+          <p className="text-gray-600 mb-4">Connect your AgriGuard robot to see real-time GPS tracking and precision planting data.</p>
+          <div className="flex items-center justify-center text-red-600">
+            <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse mr-2"></div>
+            <span className="text-sm">Waiting for robot connection...</span>
+          </div>
+        </div>
       </div>
     </div>
   );
 
   const renderErrors = () => (
-    <div className="w-full bg-white rounded-lg shadow-md p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">Errors & Notifications</h2>
-      <div className="text-center py-12">
-        <Activity className="w-12 h-12 mx-auto mb-4 text-green-600" />
-        <div className="text-lg font-semibold mb-2 text-green-700">All Systems Operational</div>
-        <div className="text-sm text-gray-600">No errors or notifications</div>
-      </div>
-    </div>
-  );
+    <div className="w-full">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center mb-6">
+          <AlertTriangle className="w-6 h-6 text-red-600 mr-3" />
+          <h2 className="text-2xl font-bold text-gray-800">Errors & Notifications</h2>
+        </div>
+        
+        <div className="space-y-4">
+          {arduinoStatus.connection === 'DISCONNECTED' && (
+            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded">
+              <div className="flex items-start">
+                <AlertTriangle className="w-5 h-5 text-amber-600 mr-3 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="font-semibold text-amber-900">Arduino Not Connected</div>
+                  <div className="text-sm text-amber-700 mt-1">Please connect your Arduino to monitor sensor data</div>
+                  <div className="text-xs text-amber-600 mt-2">Just now</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!robotStatus.connected && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+              <div className="flex items-start">
+                <AlertTriangle className="w-5 h-5 text-red-600 mr-3 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="font-semibold text-red-900">Robot Offline</div>
+                  <div className="text-sm text-red-700 mt-1">GPS tracking and planting functions unavailable</div>
+                  <div className="text-xs text-red-600 mt-2">Just now</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!weatherData.alertAvailable && (
+            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded">
+              <div className="flex items-start">
+                <AlertTriangle className="w-5 h-5 text-amber-600 mr-3 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="font-semibold text-amber-900">Weather Alert Unavailable</div>
+                  <div className="
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden" style={{ margin: 0, padding: 0, width: '100vw', maxWidth: '100vw' }}>
@@ -680,18 +1058,12 @@ export default function AgriGuardDashboard() {
                   <Menu className="w-6 h-6 text-gray-800" />
                 </button>
               )}
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 bg-emerald-600 rounded-lg flex items-center justify-center">
-                  <Shield className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-sm text-gray-500 uppercase tracking-wider font-semibold">AgriGuard</h1>
-                  <p className="text-2xl font-bold text-gray-800 h-8 overflow-hidden">
-                    <span key={currentPage} className="block page-transition">
-                      {getPageName(currentPage)}
-                    </span>
-                  </p>
-                </div>
+              <div>
+                <p className="text-3xl font-bold text-gray-800 h-10 overflow-hidden">
+                  <span key={currentPage} className="block page-transition">
+                    {getPageName(currentPage)}
+                  </span>
+                </p>
               </div>
             </div>
             <div className="text-right">
