@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Menu, X, Cpu, Activity, Cloud, AlertTriangle, ChevronRight, RefreshCw, Shield, Wifi, Zap, Thermometer, Battery, Sun, Droplet, Wind, CloudRain, AlertCircle, TrendingUp, Download, Settings, MapPin, Clock } from 'lucide-react';
 
-// --- Types ---
 type SensorStatus = 'Online' | 'Offline';
 
 interface SensorData {
@@ -50,14 +49,30 @@ interface WeatherData {
   alerts: any[];
 }
 
-interface RobotStatus { connected: boolean; waiting: boolean }
+interface RobotStatus {
+  connected: boolean;
+  waiting: boolean;
+}
 
-interface PlantingLogEntry { time: string; depth: string | number; status: string }
+interface PlantingLogEntry {
+  time: string;
+  depth: string | number;
+  status: string;
+}
 
 type NotificationType = 'success' | 'error' | 'warning' | 'info';
-interface Notification { id: string; type: NotificationType; title: string; message: string }
+interface Notification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+}
 
-interface MenuItem { id: string; label: string; icon: any }
+interface MenuItem {
+  id: string;
+  label: string;
+  icon: any;
+}
 
 const menuItems: MenuItem[] = [
   { id: 'microcontroller', label: 'Microcontroller', icon: Cpu },
@@ -138,7 +153,7 @@ export default function AgriGuardDashboard() {
     setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 8000);
   };
 
-  const ARDUINO_BOARDS = {
+  const ARDUINO_BOARDS: Record<string, string> = {
     'arduino:avr:uno': 'Arduino Uno',
     'arduino:avr:nano': 'Arduino Nano',
     'arduino:avr:mega': 'Arduino Mega 2560',
@@ -147,7 +162,7 @@ export default function AgriGuardDashboard() {
     'esp32': 'ESP32',
     'esp8266': 'ESP8266',
     'unknown': 'Unknown Board'
-  } as Record<string, string>;
+  };
 
   const detectBoardType = (usbProductId: number, productName?: string): string => {
     if (productName) {
@@ -185,17 +200,21 @@ export default function AgriGuardDashboard() {
         const { value, done } = await reader.read();
         if (done) break;
         const data = value as string;
+        
         const batteryMatch = data.match(/BAT:(\d+)/);
         if (batteryMatch) {
           setArduinoStatus(prev => ({ ...prev, battery: parseInt(batteryMatch[1]) }));
         }
+
         const tempMatch = data.match(/TEMP:([\d.-]+)/);
         const humMatch = data.match(/HUM:(\d+)/);
         const soilMatch = data.match(/SOIL:(\d+)/);
+
         const sensorUpdates: Partial<SensorData> = {};
         if (tempMatch) sensorUpdates.temperature = tempMatch[1];
         if (humMatch) sensorUpdates.humidity = humMatch[1];
         if (soilMatch) sensorUpdates.soilMoisture = soilMatch[1];
+
         if (Object.keys(sensorUpdates).length > 0) {
           setSensorData(prev => ({
             ...prev,
@@ -215,8 +234,6 @@ export default function AgriGuardDashboard() {
           readerRef.current = null;
         }
       } catch (e) {}
-      try { if (readableClosedRef.current) await readableClosedRef.current; } catch {}
-      readableClosedRef.current = null;
       setIsReading(false);
     }
   };
@@ -286,7 +303,6 @@ export default function AgriGuardDashboard() {
       });
 
       addNotification('success', 'Arduino Connected', `${boardName} connected via USB`);
-
       readSerialData(port).catch(err => {
         addNotification('error', 'Read Error', String((err as any)?.message || err));
       });
@@ -304,7 +320,6 @@ export default function AgriGuardDashboard() {
           try { readerRef.current.releaseLock(); } catch {}
           readerRef.current = null;
         }
-        if (readableClosedRef.current) await readableClosedRef.current;
         await serialPort.close();
         setSerialPort(null);
         setArduinoStatus({
@@ -318,6 +333,21 @@ export default function AgriGuardDashboard() {
           charging: false,
           voltage: 0,
           runtime: '0h'
+        });
+        setSensorData({
+          temperature: '--',
+          humidity: '--',
+          soilMoisture: '--',
+          lightIntensity: '--',
+          soilTemp: '--',
+          airQuality: '--',
+          phLevel: '--',
+          obstacleDistance: '--',
+          dht22Status: 'Offline',
+          soilSensorStatus: 'Offline',
+          lightSensorStatus: 'Offline',
+          phSensorStatus: 'Offline',
+          obstacleSensorStatus: 'Offline'
         });
         addNotification('warning', 'Arduino Disconnected', 'Disconnected successfully');
       } catch (error) {
@@ -340,13 +370,38 @@ export default function AgriGuardDashboard() {
       for (let i = 0; i < ports.length; i++) {
         const p = ports[i];
         const info: any = (typeof p.getInfo === 'function') ? p.getInfo() : {};
-        const vendor = info.usbVendorId ? '0x' + info.usbVendorId.toString(16) : 'unknown';
-        const product = info.usbProductId ? '0x' + info.usbProductId.toString(16) : 'unknown';
+        const vendor = info.usbVendorId ? `0x${info.usbVendorId.toString(16)}` : 'unknown';
+        const product = info.usbProductId ? `0x${info.usbProductId.toString(16)}` : 'unknown';
         addNotification('info', `Port ${i + 1}`, `vendor:${vendor} product:${product}`);
       }
     } catch (err: any) {
       addNotification('error', 'Debug Failed', String(err?.message || err));
     }
+  };
+
+  const downloadPlantingLogCSV = () => {
+    if (plantingLog.length === 0) {
+      addNotification('warning', 'No Data', 'No planting log data to export');
+      return;
+    }
+
+    const headers = ['Time', 'Depth', 'Status'];
+    const csvContent = [
+      headers.join(','),
+      ...plantingLog.map(log => `${log.time},"${log.depth}",${log.status}`)
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `planting_log_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    addNotification('success', 'Export Complete', 'Planting log exported to CSV');
   };
 
   const renderMicrocontroller = () => (
@@ -420,10 +475,6 @@ export default function AgriGuardDashboard() {
               Disconnect Arduino
             </button>
           )}
-        </div>
-      </div>
-    </div>
-  );
           <button onClick={debugSerial} className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 rounded-lg">
             Debug Serial
           </button>
@@ -479,13 +530,6 @@ export default function AgriGuardDashboard() {
                 <div className="text-xl font-bold text-gray-800">{arduinoStatus.voltage}V</div>
               </div>
               <Zap className="w-10 h-10 text-blue-600" />
-            </div>
-            <div className="flex items-center justify-between p-3 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg">
-              <div>
-                <div className="text-sm text-gray-600">Estimated Runtime</div>
-                <div className="text-xl font-bold text-gray-800">{arduinoStatus.runtime}</div>
-              </div>
-              <Clock className="w-10 h-10 text-purple-600" />
             </div>
             <div className="flex items-center justify-between p-3 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg">
               <div>
@@ -804,7 +848,17 @@ export default function AgriGuardDashboard() {
   const renderPlantingLog = () => (
     <div className="w-full space-y-6">
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Precision Planting Log</h2>
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-2xl font-bold text-gray-800">Precision Planting Log</h2>
+          <button 
+            onClick={downloadPlantingLogCSV}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
+            disabled={plantingLog.length === 0}
+          >
+            <Download className="w-4 h-4" />
+            Export CSV
+          </button>
+        </div>
         <p className="text-gray-600 mb-6">Live feed of actual seed planting events with GPS coordinates (Philippines time).</p>
         
         <div className="mb-6">
@@ -916,7 +970,39 @@ export default function AgriGuardDashboard() {
                 <AlertTriangle className="w-5 h-5 text-amber-600 mr-3 mt-0.5 flex-shrink-0" />
                 <div className="flex-1">
                   <div className="font-semibold text-amber-900">Weather Alert Unavailable</div>
-                  <div className="
+                  <div className="text-sm text-amber-700 mt-1">Unable to fetch current weather alerts for your location</div>
+                  <div className="text-xs text-amber-600 mt-2">5 minutes ago</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {sensorData.soilMoisture !== '--' && parseInt(String(sensorData.soilMoisture)) < 30 && (
+            <div className="bg-orange-50 border-l-4 border-orange-500 p-4 rounded">
+              <div className="flex items-start">
+                <Droplet className="w-5 h-5 text-orange-600 mr-3 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="font-semibold text-orange-900">Low Soil Moisture</div>
+                  <div className="text-sm text-orange-700 mt-1">Soil moisture at {sensorData.soilMoisture}% - irrigation recommended</div>
+                  <div className="text-xs text-orange-600 mt-2">10 minutes ago</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {arduinoStatus.connection === 'CONNECTED' && robotStatus.connected && weatherData.alertAvailable && (
+            <div className="text-center py-16 text-gray-500">
+              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Activity className="w-10 h-10 text-green-600" />
+              </div>
+              <div className="text-lg font-semibold mb-2 text-green-700">All Systems Operational</div>
+              <div className="text-sm text-gray-600">No errors or notifications at this time</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden" style={{ margin: 0, padding: 0, width: '100vw', maxWidth: '100vw' }}>
@@ -942,15 +1028,11 @@ export default function AgriGuardDashboard() {
         .animate-slide-in-right {
           animation: slideInRight 0.3s ease-out;
         }
-        .animate-fade-in {
-          animation: fadeIn 0.3s ease-out;
-        }
         .page-transition {
           animation: fadeIn 0.4s ease-out;
         }
       `}</style>
 
-      {/* Toast Notifications */}
       <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
         {notifications.map((notif) => (
           <div
@@ -986,7 +1068,6 @@ export default function AgriGuardDashboard() {
         ))}
       </div>
 
-      {/* Sidebar */}
       <aside className={`bg-white text-gray-800 transition-all duration-300 flex-shrink-0 border-r border-gray-200 ${
         sidebarOpen ? 'w-64' : 'w-0 md:w-16'
       } ${isMobile && sidebarOpen ? 'fixed inset-y-0 left-0 z-50 shadow-xl' : ''}`}>
@@ -1051,9 +1132,7 @@ export default function AgriGuardDashboard() {
         ></div>
       )}
 
-      {/* Main Content */}
       <main className="flex-1 overflow-y-auto bg-gray-100 flex flex-col">
-        {/* Dynamic Navbar */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-30">
           <div className="px-6 py-4 flex items-center justify-between">
             <div className="flex items-center">
@@ -1082,7 +1161,6 @@ export default function AgriGuardDashboard() {
           </div>
         </div>
 
-        {/* Page Content */}
         <div className="flex-1 overflow-y-auto">
           <div className="w-full px-6 py-6">
             <div key={currentPage} className="page-transition">
