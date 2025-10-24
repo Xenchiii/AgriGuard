@@ -670,24 +670,7 @@ export default function AgriGuardDashboard() {
         
         <p className="text-gray-600 mb-6">Live data from Arduino sensors</p>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4 text-center relative">
-            <div className="absolute top-2 right-2">
-              <div className={`w-2 h-2 rounded-full ${sensorData.dht22Status === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-            </div>
-            <Thermometer className="w-10 h-10 text-red-500 mx-auto mb-2" />
-            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.temperature}°C</div>
-            <div className="text-sm text-gray-600">Temperature</div>
-          </div>
-
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 text-center relative">
-            <div className="absolute top-2 right-2">
-              <div className={`w-2 h-2 rounded-full ${sensorData.dht22Status === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-            </div>
-            <Droplet className="w-10 h-10 text-blue-500 mx-auto mb-2" />
-            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.humidity}%</div>
-            <div className="text-sm text-gray-600">Air Humidity</div>
-          </div>
+       
 
           <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-lg p-4 text-center relative">
             <div className="absolute top-2 right-2">
