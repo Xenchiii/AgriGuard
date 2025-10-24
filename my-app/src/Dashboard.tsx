@@ -210,55 +210,6 @@ export default function AgriGuardDashboard() {
   };
   
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  
   const addNotification = (type: NotificationType, title: string, message: string) => {
     const id = Date.now().toString();
     setNotifications(prev => [...prev, { id, type, title, message }]);
@@ -323,8 +274,6 @@ export default function AgriGuardDashboard() {
         const soilMatch = data.match(/SOIL:(\d+)/);
 
         const sensorUpdates: Partial<SensorData> = {};
-        if (tempMatch) sensorUpdates.temperature = tempMatch[1];
-        if (humMatch) sensorUpdates.humidity = humMatch[1];
         if (soilMatch) sensorUpdates.soilMoisture = soilMatch[1];
 
         if (Object.keys(sensorUpdates).length > 0) {
@@ -447,8 +396,6 @@ export default function AgriGuardDashboard() {
           runtime: '0h'
         });
         setSensorData({
-          temperature: '--',
-          humidity: '--',
           soilMoisture: '--',
           obstacleDistance: '--',
           dht22Status: 'Offline',
@@ -669,8 +616,6 @@ export default function AgriGuardDashboard() {
         </div>
         
         <p className="text-gray-600 mb-6">Live data from Arduino sensors</p>
-
-       
 
           <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-lg p-4 text-center relative">
             <div className="absolute top-2 right-2">
