@@ -18,6 +18,7 @@ interface SensorData {
   obstacleSensorStatus: SensorStatus;
 }
 
+
 interface ArduinoStatus {
   board: string;
   connection: 'CONNECTED' | 'DISCONNECTED' | string;
@@ -108,7 +109,22 @@ export default function AgriGuardDashboard() {
     soilSensorStatus: 'Offline',
     obstacleSensorStatus: 'Offline'
   });
-
+//Fetch sensor weather data (temperature and humidity from OpenWeather)
+  const fetchSensorWeatherData = async () => {
+    try {
+      const response = await axios.get(`${BASE_URL}?q=Cainta,PH&appid=${API_KEY}&units=metric`);
+      const data = response.data;
+      
+      setSensorData((prev: SensorData) => ({
+        ...prev,
+        temperature: Math.round(data.main.temp),
+        humidity: Math.round(data.main.humidity),
+        dht22Status: 'Online'
+      }));
+    } catch (error) {
+      console.error('Error fetching sensor weather data:', error);
+    }
+  };
   const [weatherData, setWeatherData] = useState<WeatherData>({
     condition: '',
     location: '',
