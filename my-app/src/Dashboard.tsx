@@ -109,22 +109,7 @@ export default function AgriGuardDashboard() {
     soilSensorStatus: 'Offline',
     obstacleSensorStatus: 'Offline'
   });
-//Fetch sensor weather data (temperature and humidity from OpenWeather)
-  const fetchSensorWeatherData = async () => {
-    try {
-      const response = await axios.get(`${BASE_URL}?q=Cainta,PH&appid=${API_KEY}&units=metric`);
-      const data = response.data;
-      
-      setSensorData((prev: SensorData) => ({
-        ...prev,
-        temperature: Math.round(data.main.temp),
-        humidity: Math.round(data.main.humidity),
-        dht22Status: 'Online'
-      }));
-    } catch (error) {
-      console.error('Error fetching sensor weather data:', error);
-    }
-  };
+
   const [weatherData, setWeatherData] = useState<WeatherData>({
     condition: '',
     location: '',
@@ -154,20 +139,16 @@ export default function AgriGuardDashboard() {
   // Fetch weather data
   const fetchWeatherData = async () => {
     try {
-      // Default location (Manila, Philippines) - you can make this dynamic
       const response = await axios.get(`${BASE_URL}?q=Cainta,PH&appid=${API_KEY}&units=metric`);
 
       const data = response.data;
       
-      // Calculate rain chance (using cloud cover as proxy if rain data not available)
       const rainChance = data.rain ? Math.min(100, data.rain['1h'] * 10) : Math.min(100, data.clouds.all);
       
-      // Calculate wind direction from degrees
       const windDeg = data.wind.deg;
       const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
       const windDirection = directions[Math.round(windDeg / 22.5) % 16];
       
-      // Calculate agricultural metrics (simplified)
       const temp = data.main.temp;
       const humidity = data.main.humidity;
       const evapotranspiration = (temp * 0.1 + humidity * 0.05).toFixed(1);
@@ -179,9 +160,9 @@ export default function AgriGuardDashboard() {
         temperature: Math.round(temp),
         humidity: Math.round(humidity),
         rainfall: Math.round(rainChance),
-        windSpeed: Math.round(data.wind.speed * 3.6), // Convert m/s to km/h
+        windSpeed: Math.round(data.wind.speed * 3.6),
         windDirection: windDirection,
-        uvIndex: 'Moderate', // OpenWeather doesn't provide UV in free tier
+        uvIndex: 'Moderate',
         cloudCover: data.clouds.all,
         evapotranspiration: evapotranspiration,
         frostRisk: temp > 5 ? 'Low' : 'High',
@@ -197,7 +178,6 @@ export default function AgriGuardDashboard() {
     }
   };
 
-  // Fetch weather data on component mount and when weather page is active
   useEffect(() => {
     if (currentPage === 'weather') {
       fetchWeatherData();
@@ -209,7 +189,6 @@ export default function AgriGuardDashboard() {
     return item?.label || 'Dashboard';
   };
   
-
   const addNotification = (type: NotificationType, title: string, message: string) => {
     const id = Date.now().toString();
     setNotifications(prev => [...prev, { id, type, title, message }]);
@@ -269,8 +248,6 @@ export default function AgriGuardDashboard() {
           setArduinoStatus(prev => ({ ...prev, battery: parseInt(batteryMatch[1]) }));
         }
 
-        const tempMatch = data.match(/TEMP:([\d.-]+)/);
-        const humMatch = data.match(/HUM:(\d+)/);
         const soilMatch = data.match(/SOIL:(\d+)/);
 
         const sensorUpdates: Partial<SensorData> = {};
@@ -280,7 +257,6 @@ export default function AgriGuardDashboard() {
           setSensorData(prev => ({
             ...prev,
             ...sensorUpdates,
-            dht22Status: 'Online',
             soilSensorStatus: 'Online'
           }));
         }
@@ -396,6 +372,8 @@ export default function AgriGuardDashboard() {
           runtime: '0h'
         });
         setSensorData({
+          temperature: '--',
+          humidity: '--',
           soilMoisture: '--',
           obstacleDistance: '--',
           dht22Status: 'Offline',
@@ -617,6 +595,7 @@ export default function AgriGuardDashboard() {
         
         <p className="text-gray-600 mb-6">Live data from Arduino sensors</p>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-lg p-4 text-center relative">
             <div className="absolute top-2 right-2">
               <div className={`w-2 h-2 rounded-full ${sensorData.soilSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
@@ -641,10 +620,6 @@ export default function AgriGuardDashboard() {
             <h3 className="font-semibold text-gray-800 mb-3">Sensor Status</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span>DHT22/AM2302:</span>
-                <span className={sensorData.dht22Status === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.dht22Status}</span>
-              </div>
-              <div className="flex justify-between">
                 <span>Soil Moisture:</span>
                 <span className={sensorData.soilSensorStatus === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.soilSensorStatus}</span>
               </div>
@@ -663,12 +638,6 @@ export default function AgriGuardDashboard() {
                 <div className="flex items-center text-amber-700">
                   <AlertCircle className="w-4 h-4 mr-2" />
                   Soil moisture low - irrigation recommended
-                </div>
-              )}
-              {sensorData.temperature !== '--' && parseInt(String(sensorData.temperature)) > 32 && (
-                <div className="flex items-center text-red-700">
-                  <AlertCircle className="w-4 h-4 mr-2" />
-                  High temperature detected
                 </div>
               )}
               {arduinoStatus.connection === 'DISCONNECTED' && (
