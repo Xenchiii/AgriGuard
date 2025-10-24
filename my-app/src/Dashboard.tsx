@@ -139,7 +139,7 @@ export default function AgriGuardDashboard() {
   const fetchWeatherData = async () => {
     try {
       // Default location (Manila, Philippines) - you can make this dynamic
-      const response = await axios.get(`${BASE_URL}?q=Antipolo,PH&appid=${API_KEY}&units=metric`);
+      const response = await axios.get(`${BASE_URL}?q=Cainta,PH&appid=${API_KEY}&units=metric`);
 
       const data = response.data;
       
