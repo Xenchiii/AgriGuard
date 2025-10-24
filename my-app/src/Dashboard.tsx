@@ -1,21 +1,20 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Menu, X, Cpu, Activity, Cloud, AlertTriangle, ChevronRight, RefreshCw, Shield, Wifi, Zap, Thermometer, Battery, Sun, Droplet, Wind, CloudRain, AlertCircle, TrendingUp, Download, Settings, MapPin, Clock } from 'lucide-react';
 
 type SensorStatus = 'Online' | 'Offline';
+
+import axios from "axios";
+
+const API_KEY = "9866020b69400c7ad805b65040a0ed5e"
+const BASE_URL = "https://api.openweathermap.org/data/2.5/weather";
 
 interface SensorData {
   temperature: string | number;
   humidity: string | number;
   soilMoisture: string | number;
-  lightIntensity: string | number;
-  soilTemp: string | number;
-  airQuality: string | number;
-  phLevel: string | number;
   obstacleDistance: string | number;
   dht22Status: SensorStatus;
   soilSensorStatus: SensorStatus;
-  lightSensorStatus: SensorStatus;
-  phSensorStatus: SensorStatus;
   obstacleSensorStatus: SensorStatus;
 }
 
@@ -104,21 +103,15 @@ export default function AgriGuardDashboard() {
     temperature: '--',
     humidity: '--',
     soilMoisture: '--',
-    lightIntensity: '--',
-    soilTemp: '--',
-    airQuality: '--',
-    phLevel: '--',
     obstacleDistance: '--',
     dht22Status: 'Offline',
     soilSensorStatus: 'Offline',
-    lightSensorStatus: 'Offline',
-    phSensorStatus: 'Offline',
     obstacleSensorStatus: 'Offline'
   });
 
   const [weatherData, setWeatherData] = useState<WeatherData>({
-    condition: 'Partly Cloudy',
-    location: 'Cainta, Calabarzon',
+    condition: '',
+    location: '',
     temperature: 0,
     humidity: 0,
     rainfall: 0,
@@ -142,11 +135,114 @@ export default function AgriGuardDashboard() {
   const readerRef = useRef<any>(null);
   const readableClosedRef = useRef<Promise<void> | null>(null);
 
+  // Fetch weather data
+  const fetchWeatherData = async () => {
+    try {
+      // Default location (Manila, Philippines) - you can make this dynamic
+      const response = await axios.get(`${BASE_URL}?q=Antipolo,PH&appid=${API_KEY}&units=metric`);
+
+      const data = response.data;
+      
+      // Calculate rain chance (using cloud cover as proxy if rain data not available)
+      const rainChance = data.rain ? Math.min(100, data.rain['1h'] * 10) : Math.min(100, data.clouds.all);
+      
+      // Calculate wind direction from degrees
+      const windDeg = data.wind.deg;
+      const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+      const windDirection = directions[Math.round(windDeg / 22.5) % 16];
+      
+      // Calculate agricultural metrics (simplified)
+      const temp = data.main.temp;
+      const humidity = data.main.humidity;
+      const evapotranspiration = (temp * 0.1 + humidity * 0.05).toFixed(1);
+      const growingDegreeDays = Math.max(0, temp - 10).toFixed(1);
+      
+      setWeatherData({
+        condition: data.weather[0].description,
+        location: `${data.name}, ${data.sys.country}`,
+        temperature: Math.round(temp),
+        humidity: Math.round(humidity),
+        rainfall: Math.round(rainChance),
+        windSpeed: Math.round(data.wind.speed * 3.6), // Convert m/s to km/h
+        windDirection: windDirection,
+        uvIndex: 'Moderate', // OpenWeather doesn't provide UV in free tier
+        cloudCover: data.clouds.all,
+        evapotranspiration: evapotranspiration,
+        frostRisk: temp > 5 ? 'Low' : 'High',
+        growingDegreeDays: growingDegreeDays,
+        alertAvailable: false,
+        alerts: []
+      });
+      
+      addNotification('success', 'Weather Updated', 'Latest weather data fetched successfully');
+    } catch (error) {
+      console.error('Error fetching weather data:', error);
+      addNotification('error', 'Weather Error', 'Failed to fetch weather data');
+    }
+  };
+
+  // Fetch weather data on component mount and when weather page is active
+  useEffect(() => {
+    if (currentPage === 'weather') {
+      fetchWeatherData();
+    }
+  }, [currentPage]);
+
   const getPageName = (pageId: string): string => {
     const item = menuItems.find(m => m.id === pageId);
     return item?.label || 'Dashboard';
   };
+  
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
   const addNotification = (type: NotificationType, title: string, message: string) => {
     const id = Date.now().toString();
     setNotifications(prev => [...prev, { id, type, title, message }]);
@@ -338,15 +434,9 @@ export default function AgriGuardDashboard() {
           temperature: '--',
           humidity: '--',
           soilMoisture: '--',
-          lightIntensity: '--',
-          soilTemp: '--',
-          airQuality: '--',
-          phLevel: '--',
           obstacleDistance: '--',
           dht22Status: 'Offline',
           soilSensorStatus: 'Offline',
-          lightSensorStatus: 'Offline',
-          phSensorStatus: 'Offline',
           obstacleSensorStatus: 'Offline'
         });
         addNotification('warning', 'Arduino Disconnected', 'Disconnected successfully');
@@ -592,42 +682,6 @@ export default function AgriGuardDashboard() {
             <div className="text-sm text-gray-600">Soil Moisture</div>
           </div>
 
-          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-4 text-center relative">
-            <div className="absolute top-2 right-2">
-              <div className={`w-2 h-2 rounded-full ${sensorData.lightSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-            </div>
-            <Sun className="w-10 h-10 text-yellow-500 mx-auto mb-2" />
-            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.lightIntensity}%</div>
-            <div className="text-sm text-gray-600">Light Intensity</div>
-          </div>
-
-          <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-4 text-center relative">
-            <div className="absolute top-2 right-2">
-              <div className={`w-2 h-2 rounded-full ${sensorData.soilSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-            </div>
-            <Thermometer className="w-10 h-10 text-orange-600 mx-auto mb-2" />
-            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.soilTemp}°C</div>
-            <div className="text-sm text-gray-600">Soil Temperature</div>
-          </div>
-
-          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 text-center relative">
-            <div className="absolute top-2 right-2">
-              <div className={`w-2 h-2 rounded-full bg-green-500`}></div>
-            </div>
-            <Activity className="w-10 h-10 text-green-600 mx-auto mb-2" />
-            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.airQuality}</div>
-            <div className="text-sm text-gray-600">Air Quality</div>
-          </div>
-
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 text-center relative">
-            <div className="absolute top-2 right-2">
-              <div className={`w-2 h-2 rounded-full ${sensorData.phSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-            </div>
-            <Droplet className="w-10 h-10 text-purple-600 mx-auto mb-2" />
-            <div className="text-3xl font-bold text-gray-800 mb-1">{sensorData.phLevel}</div>
-            <div className="text-sm text-gray-600">pH Level</div>
-          </div>
-
           <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 rounded-lg p-4 text-center relative">
             <div className="absolute top-2 right-2">
               <div className={`w-2 h-2 rounded-full ${sensorData.obstacleSensorStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
@@ -650,14 +704,7 @@ export default function AgriGuardDashboard() {
                 <span>Soil Moisture:</span>
                 <span className={sensorData.soilSensorStatus === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.soilSensorStatus}</span>
               </div>
-              <div className="flex justify-between">
-                <span>Light Sensor:</span>
-                <span className={sensorData.lightSensorStatus === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.lightSensorStatus}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>pH Sensor:</span>
-                <span className={sensorData.phSensorStatus === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.phSensorStatus}</span>
-              </div>
+              
               <div className="flex justify-between">
                 <span>Obstacle Sensor:</span>
                 <span className={sensorData.obstacleSensorStatus === 'Online' ? 'text-green-600' : 'text-red-600'}>{sensorData.obstacleSensorStatus}</span>
@@ -764,7 +811,7 @@ export default function AgriGuardDashboard() {
         </div>
 
         <div className="text-center py-6 mb-6 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg">
-          <div className="text-4xl font-bold text-gray-800 mb-2">{weatherData.condition}</div>
+          <div className="text-4xl font-bold text-gray-800 mb-2 capitalize">{weatherData.condition}</div>
           <div className="text-gray-600">Current weather conditions</div>
         </div>
 
