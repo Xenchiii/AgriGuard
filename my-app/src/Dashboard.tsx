@@ -3,9 +3,7 @@ import { Menu, X, Cpu, Activity, Cloud, AlertTriangle, ChevronRight, RefreshCw, 
 
 type SensorStatus = 'Online' | 'Offline';
 
-import axios from "axios";
-
-const API_KEY = "9866020b69400c7ad805b65040a0ed5e"
+const API_KEY = "9866020b69400c7ad805b65040a0ed5e";
 const BASE_URL = "https://api.openweathermap.org/data/2.5/weather";
 
 interface SensorData {
@@ -17,7 +15,6 @@ interface SensorData {
   soilSensorStatus: SensorStatus;
   obstacleSensorStatus: SensorStatus;
 }
-
 
 interface ArduinoStatus {
   board: string;
@@ -134,14 +131,18 @@ export default function AgriGuardDashboard() {
   const [serialPort, setSerialPort] = useState<any | null>(null);
   const [isReading, setIsReading] = useState(false);
   const readerRef = useRef<any>(null);
-  const readableClosedRef = useRef<Promise<void> | null>(null);
 
-  // Fetch weather data
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const fetchWeatherData = async () => {
     try {
-      const response = await axios.get(`${BASE_URL}?q=Cainta,PH&appid=${API_KEY}&units=metric`);
-
-      const data = response.data;
+      const response = await fetch(`${BASE_URL}?q=Cainta,PH&appid=${API_KEY}&units=metric`);
+      const data = await response.json();
       
       const rainChance = data.rain ? Math.min(100, data.rain['1h'] * 10) : Math.min(100, data.clouds.all);
       
@@ -229,7 +230,64 @@ export default function AgriGuardDashboard() {
     }
   };
 
-  
+  const readSerialData = async (port: any) => {
+    if (!port || isReading) return;
+    setIsReading(true);
+    
+    try {
+      const textDecoder = new TextDecoderStream();
+      const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+      const reader = textDecoder.readable.getReader();
+      readerRef.current = reader;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        
+        const data = value as string;
+        
+        const batteryMatch = data.match(/BAT:(\d+)/);
+        if (batteryMatch) {
+          setArduinoStatus(prev => ({ ...prev, battery: parseInt(batteryMatch[1]) }));
+        }
+
+        const tempMatch = data.match(/TEMP:([\d.-]+)/);
+        const humMatch = data.match(/HUM:(\d+)/);
+        const soilMatch = data.match(/SOIL:(\d+)/);
+        const distMatch = data.match(/DIST:(\d+)/);
+
+        const sensorUpdates: Partial<SensorData> = {};
+        if (tempMatch) sensorUpdates.temperature = tempMatch[1];
+        if (humMatch) sensorUpdates.humidity = humMatch[1];
+        if (soilMatch) sensorUpdates.soilMoisture = soilMatch[1];
+        if (distMatch) sensorUpdates.obstacleDistance = distMatch[1];
+
+        if (Object.keys(sensorUpdates).length > 0) {
+          setSensorData(prev => ({
+            ...prev,
+            ...sensorUpdates,
+            dht22Status: tempMatch || humMatch ? 'Online' : prev.dht22Status,
+            soilSensorStatus: soilMatch ? 'Online' : prev.soilSensorStatus,
+            obstacleSensorStatus: distMatch ? 'Online' : prev.obstacleSensorStatus
+          }));
+        }
+      }
+    } catch (error: any) {
+      if (error.name !== 'AbortError') {
+        console.error('Serial read error:', error);
+        addNotification('error', 'Read Error', error?.message || 'Unknown error');
+      }
+    } finally {
+      setIsReading(false);
+      if (readerRef.current) {
+        try {
+          readerRef.current.releaseLock();
+        } catch (e) {}
+        readerRef.current = null;
+      }
+    }
+  };
+
   const connectArduino = async () => {
     if (!('serial' in navigator)) {
       addNotification('error', 'Not Supported', 'Web Serial API not supported');
@@ -245,57 +303,7 @@ export default function AgriGuardDashboard() {
       try {
         port = await (navigator as any).serial.requestPort({
           filters: [
-     // Dashboard.tsx (around line 348)
-
-  const readSerialData = async (port: any) => {
-    if (!port || isReading) return;
-    setIsReading(true);
-    try {
-      const textDecoder = new TextDecoderStream();
-      // ... (rest of setup) ...
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const data = value as string;
-        
-        // Existing Battery check
-        const batteryMatch = data.match(/BAT:(\d+)/);
-        if (batteryMatch) {
-          setArduinoStatus(prev => ({ ...prev, battery: parseInt(batteryMatch[1]) }));
-        }
-
-        const tempMatch = data.match(/TEMP:([\d.-]+)/);
-        const humMatch = data.match(/HUM:(\d+)/);
-        const soilMatch = data.match(/SOIL:(\d+)/);
-        // ADD THIS NEW MATCH FOR OBSTACLE DISTANCE
-        const distMatch = data.match(/DIST:(\d+)/); // <-- ADD THIS LINE
-
-        const sensorUpdates: Partial<SensorData> = {};
-        if (tempMatch) sensorUpdates.temperature = tempMatch[1];
-        if (humMatch) sensorUpdates.humidity = humMatch[1];
-        if (soilMatch) sensorUpdates.soilMoisture = soilMatch[1];
-        // ADD THIS CHECK
-        if (distMatch) sensorUpdates.obstacleDistance = distMatch[1]; // <-- ADD THIS LINE
-
-        if (Object.keys(sensorUpdates).length > 0) {
-          setSensorData(prev => ({
-            ...prev,
-            ...sensorUpdates,
-            // Update sensor status based on which data was received
-            dht22Status: tempMatch || humMatch ? 'Online' : prev.dht22Status,
-            soilSensorStatus: soilMatch ? 'Online' : prev.soilSensorStatus,
-            // Update the obstacle sensor status
-            obstacleSensorStatus: distMatch ? 'Online' : prev.obstacleSensorStatus // <-- ADD THIS LINE
-          }));
-        }
-      }
-    } catch (error) {
-      // ... (rest of error handling) ...
-    } finally {
-      // ... (rest of cleanup) ...
-    }
-  };       { usbVendorId: 0x2341 },
+            { usbVendorId: 0x2341 },
             { usbVendorId: 0x2A03 },
             { usbVendorId: 0x1A86 },
             { usbVendorId: 0x0403 }
