@@ -229,52 +229,7 @@ export default function AgriGuardDashboard() {
     }
   };
 
-  const readSerialData = async (port: any) => {
-    if (!port || isReading) return;
-    setIsReading(true);
-    try {
-      const textDecoder = new TextDecoderStream();
-      readableClosedRef.current = port.readable.pipeTo(textDecoder.writable);
-      const reader = textDecoder.readable.getReader();
-      readerRef.current = reader;
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const data = value as string;
-        
-        const batteryMatch = data.match(/BAT:(\d+)/);
-        if (batteryMatch) {
-          setArduinoStatus(prev => ({ ...prev, battery: parseInt(batteryMatch[1]) }));
-        }
-
-        const soilMatch = data.match(/SOIL:(\d+)/);
-
-        const sensorUpdates: Partial<SensorData> = {};
-        if (soilMatch) sensorUpdates.soilMoisture = soilMatch[1];
-
-        if (Object.keys(sensorUpdates).length > 0) {
-          setSensorData(prev => ({
-            ...prev,
-            ...sensorUpdates,
-            soilSensorStatus: 'Online'
-          }));
-        }
-      }
-    } catch (error) {
-      console.error('Serial read error:', error);
-    } finally {
-      try {
-        if (readerRef.current) {
-          await readerRef.current.cancel();
-          try { readerRef.current.releaseLock(); } catch {}
-          readerRef.current = null;
-        }
-      } catch (e) {}
-      setIsReading(false);
-    }
-  };
-
+  
   const connectArduino = async () => {
     if (!('serial' in navigator)) {
       addNotification('error', 'Not Supported', 'Web Serial API not supported');
@@ -290,7 +245,57 @@ export default function AgriGuardDashboard() {
       try {
         port = await (navigator as any).serial.requestPort({
           filters: [
-            { usbVendorId: 0x2341 },
+     // Dashboard.tsx (around line 348)
+
+  const readSerialData = async (port: any) => {
+    if (!port || isReading) return;
+    setIsReading(true);
+    try {
+      const textDecoder = new TextDecoderStream();
+      // ... (rest of setup) ...
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const data = value as string;
+        
+        // Existing Battery check
+        const batteryMatch = data.match(/BAT:(\d+)/);
+        if (batteryMatch) {
+          setArduinoStatus(prev => ({ ...prev, battery: parseInt(batteryMatch[1]) }));
+        }
+
+        const tempMatch = data.match(/TEMP:([\d.-]+)/);
+        const humMatch = data.match(/HUM:(\d+)/);
+        const soilMatch = data.match(/SOIL:(\d+)/);
+        // ADD THIS NEW MATCH FOR OBSTACLE DISTANCE
+        const distMatch = data.match(/DIST:(\d+)/); // <-- ADD THIS LINE
+
+        const sensorUpdates: Partial<SensorData> = {};
+        if (tempMatch) sensorUpdates.temperature = tempMatch[1];
+        if (humMatch) sensorUpdates.humidity = humMatch[1];
+        if (soilMatch) sensorUpdates.soilMoisture = soilMatch[1];
+        // ADD THIS CHECK
+        if (distMatch) sensorUpdates.obstacleDistance = distMatch[1]; // <-- ADD THIS LINE
+
+        if (Object.keys(sensorUpdates).length > 0) {
+          setSensorData(prev => ({
+            ...prev,
+            ...sensorUpdates,
+            // Update sensor status based on which data was received
+            dht22Status: tempMatch || humMatch ? 'Online' : prev.dht22Status,
+            soilSensorStatus: soilMatch ? 'Online' : prev.soilSensorStatus,
+            // Update the obstacle sensor status
+            obstacleSensorStatus: distMatch ? 'Online' : prev.obstacleSensorStatus // <-- ADD THIS LINE
+          }));
+        }
+      }
+    } catch (error) {
+      // ... (rest of error handling) ...
+    } finally {
+      // ... (rest of cleanup) ...
+    }
+  };       { usbVendorId: 0x2341 },
             { usbVendorId: 0x2A03 },
             { usbVendorId: 0x1A86 },
             { usbVendorId: 0x0403 }
